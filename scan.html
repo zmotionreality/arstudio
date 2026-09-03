@@ -1,0 +1,241 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>AR viewer</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@latest/tabler-icons.min.css" />
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+  * { box-sizing: border-box; }
+  html, body { margin:0; padding:0; height:100%; background:#000; color:#fff; font-family:-apple-system, "Segoe UI", Roboto, sans-serif; overflow:hidden; }
+
+  .screen { position:fixed; inset:0; display:flex; flex-direction:column; }
+  .center { align-items:center; justify-content:center; text-align:center; padding:24px; }
+
+  /* Picker screen (shown only if a QR group has more than one item) */
+  #pickerScreen { display:none; background:#0c0c10; overflow-y:auto; padding:24px 16px; }
+  #pickerScreen h1 { font-size:18px; font-weight:600; margin:8px 0 16px; }
+  .picker-grid { display:grid; grid-template-columns:repeat(auto-fill, minmax(130px,1fr)); gap:10px; }
+  .picker-item { background:#18181e; border-radius:12px; overflow:hidden; cursor:pointer; border:1px solid #2a2a32; }
+  .picker-item img { width:100%; height:110px; object-fit:cover; display:block; }
+  .picker-item p { font-size:13px; margin:0; padding:8px 10px; }
+
+  /* Camera / AR screen */
+  #arContainer { position:fixed; inset:0; }
+  #arContainer video { object-fit:cover; }
+
+  #hintOverlay {
+    position:fixed; left:0; right:0; bottom:32px; text-align:center; pointer-events:none;
+    font-size:14px; color:#fff; text-shadow:0 1px 4px rgba(0,0,0,0.6);
+  }
+
+  /* Fullscreen playback after "continue without aiming" */
+  #playerScreen { display:none; background:#000; }
+  #playerVideo { width:100%; height:100%; object-fit:contain; }
+
+  .link-row {
+    position:fixed; left:0; right:0; bottom:0; padding:16px; display:flex; gap:8px;
+    flex-wrap:wrap; justify-content:center; z-index:5;
+  }
+  .link-pill {
+    background:rgba(255,255,255,0.12); backdrop-filter:blur(6px); color:#fff; padding:8px 14px;
+    border-radius:999px; font-size:13px; text-decoration:none; border:1px solid rgba(255,255,255,0.2);
+  }
+
+  .status-text { font-size:15px; opacity:0.8; }
+  .error-text { font-size:14px; color:#ff8a80; }
+  .spinner {
+    width:28px; height:28px; border:2px solid rgba(255,255,255,0.25); border-top-color:#fff;
+    border-radius:50%; animation:spin 0.8s linear infinite; margin:0 auto 14px;
+  }
+  @keyframes spin { to { transform:rotate(360deg); } }
+</style>
+</head>
+<body>
+
+<div class="screen center" id="loadingScreen">
+  <div class="spinner"></div>
+  <p class="status-text">Loading…</p>
+</div>
+
+<div class="screen center" id="errorScreen" style="display:none;">
+  <p class="error-text" id="errorText">This code isn't set up yet.</p>
+</div>
+
+<div class="screen" id="pickerScreen">
+  <h1>Point your camera at…</h1>
+  <div class="picker-grid" id="pickerGrid"></div>
+</div>
+
+<div id="arContainer" style="display:none;"></div>
+<p id="hintOverlay" style="display:none;">Point your camera at the photo</p>
+
+<div class="screen" id="playerScreen">
+  <video id="playerVideo" playsinline autoplay></video>
+</div>
+
+<div class="link-row" id="linkRow"></div>
+
+<script src="js/supabase-client.js"></script>
+<script>
+// ------------------------------------------------------------------
+// AR recognition uses MindAR (https://hiukim.github.io/mind-ar-js-doc/).
+// It ships as two scripts below (three.js, then mindar-image-three).
+// If the AR camera view fails to start after deploying, check that
+// project's docs for the current script URLs/class names — 3rd-party
+// library APIs occasionally change between versions.
+// ------------------------------------------------------------------
+
+const params = new URLSearchParams(window.location.search);
+const groupSlug = params.get("g");
+
+const loadingScreen = document.getElementById("loadingScreen");
+const errorScreen = document.getElementById("errorScreen");
+const pickerScreen = document.getElementById("pickerScreen");
+const arContainer = document.getElementById("arContainer");
+const hintOverlay = document.getElementById("hintOverlay");
+const playerScreen = document.getElementById("playerScreen");
+const playerVideo = document.getElementById("playerVideo");
+const linkRow = document.getElementById("linkRow");
+
+function showOnly(el) {
+  [loadingScreen, errorScreen, pickerScreen, arContainer, playerScreen].forEach(s => s.style.display = "none");
+  el.style.display = el === arContainer ? "block" : "flex";
+}
+
+function showError(msg) {
+  document.getElementById("errorText").textContent = msg;
+  showOnly(errorScreen);
+}
+
+function renderButtons(buttons) {
+  linkRow.innerHTML = (buttons || []).map(b =>
+    `<a class="link-pill" href="${b.url}" target="_blank" rel="noopener">${b.label}</a>`
+  ).join("");
+}
+
+// Best-effort, approximate location for basic analytics (city/country only,
+// no GPS permission needed). Silently skipped if the lookup fails.
+async function logScan(groupId, itemId) {
+  let city = null, country = null;
+  try {
+    const res = await fetch("https://ipapi.co/json/");
+    const geo = await res.json();
+    city = geo.city || null;
+    country = geo.country_name || null;
+  } catch (e) { /* analytics only — never block the experience on this */ }
+  supabaseClient.from("scans").insert({ qr_group_id: groupId, item_id: itemId, city, country }).then(() => {});
+}
+
+let group = null;
+let items = [];
+
+async function init() {
+  if (!groupSlug) return showError("Missing code.");
+
+  const { data: g, error: gErr } = await supabaseClient.from("qr_groups").select("*").eq("slug", groupSlug).single();
+  if (gErr || !g) return showError("This code isn't set up yet.");
+  group = g;
+
+  const { data: its, error: iErr } = await supabaseClient
+    .from("items").select("*").eq("qr_group_id", g.id).eq("active", true).order("sort_order");
+  if (iErr || !its || !its.length) return showError("Nothing is live on this code yet.");
+  items = its;
+
+  renderButtons(group.buttons);
+
+  if (items.length === 1) {
+    startAR(items[0]);
+  } else {
+    showPicker();
+  }
+}
+
+function showPicker() {
+  document.getElementById("pickerGrid").innerHTML = items.map(it => `
+    <div class="picker-item" data-id="${it.id}">
+      <img src="${it.photo_url}" alt="${it.name}" />
+      <p>${it.name}</p>
+    </div>`).join("");
+  document.querySelectorAll(".picker-item").forEach(el => {
+    el.addEventListener("click", () => {
+      const item = items.find(i => i.id === el.dataset.id);
+      startAR(item);
+    });
+  });
+  showOnly(pickerScreen);
+}
+
+let mindarThree = null;
+
+async function startAR(item) {
+  showOnly(loadingScreen);
+  document.querySelector("#loadingScreen .status-text").textContent = "Starting camera…";
+
+  logScan(group.id, item.id);
+
+  arContainer.innerHTML = "";
+  try {
+    mindarThree = new window.MINDAR.IMAGE.MindARThree({
+      container: arContainer,
+      imageTargetSrc: item.mind_url,
+    });
+    const { renderer, scene, camera } = mindarThree;
+    const anchor = mindarThree.addAnchor(0);
+
+    const video = document.createElement("video");
+    video.src = item.video_url;
+    video.playsInline = true;
+    video.muted = false;
+    video.crossOrigin = "anonymous";
+
+    const texture = new THREE.VideoTexture(video);
+    const geometry = new THREE.PlaneGeometry(1, 1);
+    const material = new THREE.MeshBasicMaterial({ map: texture });
+    const plane = new THREE.Mesh(geometry, material);
+    anchor.group.add(plane);
+
+    let switched = false;
+    anchor.onTargetFound = () => {
+      hintOverlay.style.display = "none";
+      video.play().catch(() => {});
+      // After a couple of seconds of confirmed playback, drop out of the
+      // camera view into a normal fullscreen video — "continue without aiming".
+      setTimeout(() => {
+        if (!switched && !video.paused) switchToFullscreenPlayer(video);
+      }, 2500);
+    };
+    anchor.onTargetLost = () => {
+      if (!switched) hintOverlay.style.display = "block";
+    };
+
+    showOnly(arContainer);
+    hintOverlay.style.display = "block";
+    linkRow.style.display = "flex";
+
+    await mindarThree.start();
+    renderer.setAnimationLoop(() => renderer.render(scene, camera));
+
+    function switchToFullscreenPlayer(camVideo) {
+      switched = true;
+      playerVideo.src = camVideo.src;
+      playerVideo.currentTime = camVideo.currentTime;
+      mindarThree.stop();
+      showOnly(playerScreen);
+      linkRow.style.display = "flex";
+      playerVideo.play().catch(() => {});
+    }
+  } catch (err) {
+    showError("Couldn't start the camera. Make sure camera access is allowed.");
+  }
+}
+
+init();
+</script>
+
+<!-- MindAR dependencies -->
+<script src="https://cdn.jsdelivr.net/npm/three@0.132.2/build/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/mind-ar@1.2.5/dist/mindar-image-three.prod.js"></script>
+</body>
+</html>
