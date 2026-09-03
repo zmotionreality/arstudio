@@ -78,14 +78,25 @@
 <div class="link-row" id="linkRow"></div>
 
 <script src="js/supabase-client.js"></script>
-<script>
-// ------------------------------------------------------------------
-// AR recognition uses MindAR (https://hiukim.github.io/mind-ar-js-doc/).
-// It ships as two scripts below (three.js, then mindar-image-three).
-// If the AR camera view fails to start after deploying, check that
-// project's docs for the current script URLs/class names — 3rd-party
-// library APIs occasionally change between versions.
-// ------------------------------------------------------------------
+
+<!-- MindAR (image tracking) and three.js ship as ES modules, so they need
+     type="module" plus an import map for the bare "three" imports used
+     inside mindar-image-three. If the AR camera view fails to start after
+     deploying, check https://hiukim.github.io/mind-ar-js-doc/installation/
+     for the current recommended versions/URLs — 3rd-party library APIs
+     occasionally change between versions. -->
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+  }
+}
+</script>
+<script type="module" src="https://cdn.jsdelivr.net/npm/mind-ar@1.2.5/dist/mindar-image-three.prod.js"></script>
+
+<script type="module">
+import * as THREE from "three";
 
 const params = new URLSearchParams(window.location.search);
 const groupSlug = params.get("g");
@@ -233,9 +244,5 @@ async function startAR(item) {
 
 init();
 </script>
-
-<!-- MindAR dependencies -->
-<script src="https://cdn.jsdelivr.net/npm/three@0.132.2/build/three.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/mind-ar@1.2.5/dist/mindar-image-three.prod.js"></script>
 </body>
 </html>
