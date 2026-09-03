@@ -1,0 +1,333 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>QR group — Admin</title>
+<link rel="stylesheet" href="../css/style.css" />
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@latest/tabler-icons.min.css" />
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.3/build/qrcode.min.js"></script>
+</head>
+<body>
+
+<div class="app-shell">
+  <nav class="sidebar">
+    <p class="brand">Admin</p>
+    <a href="clients.html"><i class="ti ti-users"></i> Clients</a>
+    <a href="#" id="signOutLink"><i class="ti ti-logout"></i> Sign out</a>
+  </nav>
+
+  <main class="main">
+    <a href="#" id="backToClient" style="font-size:13px; color:var(--text-secondary); display:inline-flex; align-items:center; gap:4px; margin-bottom:14px;">
+      <i class="ti ti-arrow-left"></i> Back to client
+    </a>
+
+    <div class="page-header">
+      <div>
+        <h1 id="groupName">—</h1>
+        <p>This QR code stays the same even if you change the items behind it.</p>
+      </div>
+      <button class="btn" id="editButtonsBtn"><i class="ti ti-link"></i> Buttons</button>
+    </div>
+
+    <div style="display:flex; gap:20px; margin-bottom:28px; align-items:flex-start; flex-wrap:wrap;">
+      <div class="card" style="text-align:center;">
+        <canvas id="qrCanvas"></canvas>
+        <button class="btn btn-sm" id="downloadQrBtn" style="margin-top:10px; width:100%; justify-content:center;">
+          <i class="ti ti-download"></i> Download QR
+        </button>
+      </div>
+      <div class="card" style="flex:1; min-width:220px;">
+        <p class="label" style="font-size:12.5px; color:var(--text-secondary); margin:0 0 6px;">Scan link</p>
+        <p id="scanLink" style="font-size:13px; word-break:break-all; margin:0 0 12px;">—</p>
+        <p class="label" style="font-size:12.5px; color:var(--text-secondary); margin:0 0 6px;">Scans</p>
+        <p style="font-size:22px; font-weight:600; margin:0;" id="groupScanCount">—</p>
+      </div>
+    </div>
+
+    <div class="page-header" style="margin-bottom:12px;">
+      <div><h1 style="font-size:16px;">Items</h1></div>
+      <button class="btn btn-primary btn-sm" id="addItemBtn"><i class="ti ti-plus"></i> Add item</button>
+    </div>
+
+    <div class="row-list" id="itemList">
+      <p style="color:var(--text-secondary); font-size:14px;">Loading…</p>
+    </div>
+  </main>
+</div>
+
+<!-- Buttons editor modal -->
+<div class="modal-overlay" id="buttonsModal" style="display:none;">
+  <div class="modal">
+    <h2>Buttons around the video</h2>
+    <p class="field-hint" style="margin-bottom:12px;">Optional links shown to the viewer while the video plays — Instagram, WhatsApp, your menu, etc.</p>
+    <div id="buttonRows"></div>
+    <button class="btn btn-sm" id="addButtonRow" style="margin-top:6px;"><i class="ti ti-plus"></i> Add button</button>
+    <div class="modal-actions">
+      <button class="btn" id="cancelButtons">Cancel</button>
+      <button class="btn btn-primary" id="saveButtons">Save</button>
+    </div>
+  </div>
+</div>
+
+<!-- Add item modal -->
+<div class="modal-overlay" id="addItemModal" style="display:none;">
+  <div class="modal">
+    <h2>Add item</h2>
+    <div class="field">
+      <label>Name (for your reference)</label>
+      <input type="text" id="itemName" placeholder="Espresso" />
+    </div>
+    <div class="field">
+      <label>Photo (what the camera looks for)</label>
+      <input type="file" id="itemPhoto" accept="image/*" />
+    </div>
+    <div class="field">
+      <label>Video (what plays over it)</label>
+      <input type="file" id="itemVideo" accept="video/*" />
+    </div>
+    <p class="field-hint" id="uploadStatus"></p>
+    <div class="field-error" id="addItemError" style="display:none;"></div>
+    <div class="modal-actions">
+      <button class="btn" id="cancelAddItem">Cancel</button>
+      <button class="btn btn-primary" id="confirmAddItem">Add item</button>
+    </div>
+  </div>
+</div>
+
+<script src="../js/supabase-client.js"></script>
+<script>
+const params = new URLSearchParams(window.location.search);
+const groupId = params.get("id");
+if (!groupId) window.location.href = "clients.html";
+
+// Set this to where you deploy the app, e.g. https://your-app.vercel.app
+const SITE_URL = window.location.origin;
+
+async function requireAuth() {
+  const { data } = await supabaseClient.auth.getSession();
+  if (!data.session) window.location.href = "login.html";
+}
+requireAuth();
+
+document.getElementById("signOutLink").addEventListener("click", async (e) => {
+  e.preventDefault();
+  await supabaseClient.auth.signOut();
+  window.location.href = "login.html";
+});
+
+let currentGroup = null;
+
+async function loadGroup() {
+  const { data: group, error } = await supabaseClient.from("qr_groups").select("*").eq("id", groupId).single();
+  if (error || !group) {
+    document.getElementById("groupName").textContent = "Group not found";
+    return;
+  }
+  currentGroup = group;
+  document.getElementById("groupName").textContent = group.name;
+  document.getElementById("backToClient").href = `client.html?id=${group.client_id}`;
+
+  const scanUrl = `${SITE_URL}/scan.html?g=${group.slug}`;
+  document.getElementById("scanLink").textContent = scanUrl;
+  QRCode.toCanvas(document.getElementById("qrCanvas"), scanUrl, { width: 180, margin: 1 });
+
+  const { count } = await supabaseClient
+    .from("scans")
+    .select("id", { count: "exact", head: true })
+    .eq("qr_group_id", groupId);
+  document.getElementById("groupScanCount").textContent = count ?? 0;
+}
+
+document.getElementById("downloadQrBtn").addEventListener("click", () => {
+  const canvas = document.getElementById("qrCanvas");
+  const link = document.createElement("a");
+  link.download = `${(currentGroup?.name || "qr-code").replace(/\s+/g, "-")}.png`;
+  link.href = canvas.toDataURL("image/png");
+  link.click();
+});
+
+async function loadItems() {
+  const { data: items, error } = await supabaseClient
+    .from("items")
+    .select("*")
+    .eq("qr_group_id", groupId)
+    .order("sort_order", { ascending: true });
+
+  const itemListEl = document.getElementById("itemList");
+  if (error) {
+    itemListEl.innerHTML = `<p class="field-error">${error.message}</p>`;
+    return;
+  }
+  if (!items.length) {
+    itemListEl.innerHTML = `
+      <div class="empty-state">
+        <h3>No items yet</h3>
+        <p>Add a photo and a video — that photo becomes the QR code's AR trigger.</p>
+      </div>`;
+    return;
+  }
+
+  itemListEl.innerHTML = items.map(it => `
+    <div class="row-item">
+      <div class="row-thumb"><img src="${it.photo_url}" alt="" /></div>
+      <div style="flex:1; min-width:0;">
+        <p class="row-title">${it.name}</p>
+        <p class="row-sub">${it.active ? "Live" : "Hidden"}</p>
+      </div>
+      <span class="badge ${it.active ? "badge-success" : "badge-muted"}">${it.active ? "Live" : "Hidden"}</span>
+      <button class="btn btn-sm toggle-active" data-id="${it.id}" data-active="${it.active}">${it.active ? "Hide" : "Show"}</button>
+      <button class="btn btn-sm btn-danger delete-item" data-id="${it.id}"><i class="ti ti-trash"></i></button>
+    </div>`).join("");
+
+  document.querySelectorAll(".toggle-active").forEach(btn => {
+    btn.addEventListener("click", async () => {
+      const id = btn.dataset.id;
+      const active = btn.dataset.active === "true";
+      await supabaseClient.from("items").update({ active: !active }).eq("id", id);
+      loadItems();
+    });
+  });
+  document.querySelectorAll(".delete-item").forEach(btn => {
+    btn.addEventListener("click", async () => {
+      if (!confirm("Delete this item?")) return;
+      await supabaseClient.from("items").delete().eq("id", btn.dataset.id);
+      loadItems();
+    });
+  });
+}
+
+loadGroup().then(loadItems);
+
+// ---- Buttons editor ----
+const buttonsModal = document.getElementById("buttonsModal");
+const buttonRowsEl = document.getElementById("buttonRows");
+
+function renderButtonRow(btn = { label: "", url: "" }) {
+  const row = document.createElement("div");
+  row.style.cssText = "display:flex; gap:6px; margin-bottom:8px;";
+  row.innerHTML = `
+    <input type="text" placeholder="Label (Instagram)" class="btn-label" value="${btn.label || ""}" style="flex:1; border:1px solid var(--border-strong); border-radius:var(--radius); padding:7px 9px;" />
+    <input type="url" placeholder="https://..." class="btn-url" value="${btn.url || ""}" style="flex:2; border:1px solid var(--border-strong); border-radius:var(--radius); padding:7px 9px;" />
+    <button class="btn btn-sm remove-row" type="button"><i class="ti ti-x"></i></button>`;
+  row.querySelector(".remove-row").addEventListener("click", () => row.remove());
+  buttonRowsEl.appendChild(row);
+}
+
+document.getElementById("editButtonsBtn").addEventListener("click", () => {
+  buttonRowsEl.innerHTML = "";
+  const existing = (currentGroup?.buttons || []);
+  if (existing.length) existing.forEach(renderButtonRow);
+  else renderButtonRow();
+  buttonsModal.style.display = "flex";
+});
+document.getElementById("addButtonRow").addEventListener("click", () => renderButtonRow());
+document.getElementById("cancelButtons").addEventListener("click", () => buttonsModal.style.display = "none");
+
+document.getElementById("saveButtons").addEventListener("click", async () => {
+  const rows = [...buttonRowsEl.children];
+  const buttons = rows.map(row => ({
+    label: row.querySelector(".btn-label").value.trim(),
+    url: row.querySelector(".btn-url").value.trim(),
+  })).filter(b => b.label && b.url);
+
+  await supabaseClient.from("qr_groups").update({ buttons }).eq("id", groupId);
+  currentGroup.buttons = buttons;
+  buttonsModal.style.display = "none";
+});
+
+// ---- Add item (upload photo + video, compile AR target) ----
+const addItemModal = document.getElementById("addItemModal");
+document.getElementById("addItemBtn").addEventListener("click", () => addItemModal.style.display = "flex");
+document.getElementById("cancelAddItem").addEventListener("click", () => addItemModal.style.display = "none");
+
+// Uploads a file straight from the browser to Cloudflare R2, using a
+// short-lived link issued by our own /api/get-upload-url function. The R2
+// secret keys never touch the browser — only that one-time link does.
+async function uploadFile(file) {
+  const res = await fetch("/api/get-upload-url", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ fileName: file.name, contentType: file.type || "application/octet-stream" }),
+  });
+  const { uploadUrl, publicUrl, error } = await res.json();
+  if (error) throw new Error(error);
+
+  const putRes = await fetch(uploadUrl, { method: "PUT", body: file, headers: { "Content-Type": file.type || "application/octet-stream" } });
+  if (!putRes.ok) throw new Error("Upload to storage failed.");
+
+  return publicUrl;
+}
+
+// Compiles the trigger photo into a .mind AR target file, entirely in the browser.
+// NOTE: MindAR's compiler API has changed across versions in the past — if this
+// throws, check https://hiukim.github.io/mind-ar-js-doc/tools/compile for the
+// current script tag and class name, and update this function to match.
+async function compileTarget(imageFile) {
+  const img = await new Promise((resolve, reject) => {
+    const image = new Image();
+    image.onload = () => resolve(image);
+    image.onerror = reject;
+    image.src = URL.createObjectURL(imageFile);
+  });
+  const compiler = new window.MINDAR.IMAGE.Compiler();
+  await compiler.compileImageTargets([img], () => {});
+  const buffer = await compiler.exportData();
+  return new File([buffer], "target.mind", { type: "application/octet-stream" });
+}
+
+document.getElementById("confirmAddItem").addEventListener("click", async () => {
+  const name = document.getElementById("itemName").value.trim();
+  const photoFile = document.getElementById("itemPhoto").files[0];
+  const videoFile = document.getElementById("itemVideo").files[0];
+  const errorBox = document.getElementById("addItemError");
+  const statusEl = document.getElementById("uploadStatus");
+  errorBox.style.display = "none";
+
+  if (!name || !photoFile || !videoFile) {
+    errorBox.textContent = "Fill in the name and choose both files.";
+    errorBox.style.display = "block";
+    return;
+  }
+
+  const confirmBtn = document.getElementById("confirmAddItem");
+  confirmBtn.disabled = true;
+
+  try {
+    statusEl.textContent = "Uploading photo…";
+    const photoUrl = await uploadFile(photoFile);
+
+    statusEl.textContent = "Uploading video…";
+    const videoUrl = await uploadFile(videoFile);
+
+    statusEl.textContent = "Preparing AR recognition (this can take a few seconds)…";
+    const mindFile = await compileTarget(photoFile);
+    const mindUrl = await uploadFile(mindFile);
+
+    statusEl.textContent = "Saving…";
+    const { error } = await supabaseClient.from("items").insert({
+      qr_group_id: groupId, name, photo_url: photoUrl, video_url: videoUrl, mind_url: mindUrl,
+    });
+    if (error) throw error;
+
+    addItemModal.style.display = "none";
+    statusEl.textContent = "";
+    document.getElementById("itemName").value = "";
+    document.getElementById("itemPhoto").value = "";
+    document.getElementById("itemVideo").value = "";
+    loadItems();
+  } catch (err) {
+    errorBox.textContent = err.message || "Something went wrong.";
+    errorBox.style.display = "block";
+    statusEl.textContent = "";
+  } finally {
+    confirmBtn.disabled = false;
+  }
+});
+</script>
+
+<!-- Needed only for the client-side AR target compiler used above -->
+<script src="https://cdn.jsdelivr.net/npm/mind-ar@1.2.5/dist/mindar-image.prod.js"></script>
+</body>
+</html>

@@ -1,0 +1,84 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Sign in — Admin</title>
+<link rel="stylesheet" href="../css/style.css" />
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+</head>
+<body>
+
+<div class="login-shell">
+  <div class="card login-card">
+    <p class="brand">Admin</p>
+    <div class="field">
+      <label for="email">Email</label>
+      <input type="email" id="email" placeholder="you@example.com" />
+    </div>
+    <div class="field">
+      <label for="password">Password</label>
+      <input type="password" id="password" placeholder="••••••••" />
+    </div>
+    <div class="field-error" id="error" style="display:none;"></div>
+    <button class="btn btn-primary" id="signInBtn" style="width:100%; justify-content:center;">Sign in</button>
+    <p class="field-hint" style="margin-top:14px;">First time here? <a href="#" id="signUpLink">Create an account</a></p>
+  </div>
+</div>
+
+<script src="../js/supabase-client.js"></script>
+<script>
+const emailInput = document.getElementById("email");
+const passwordInput = document.getElementById("password");
+const errorBox = document.getElementById("error");
+const signInBtn = document.getElementById("signInBtn");
+const signUpLink = document.getElementById("signUpLink");
+let mode = "signin";
+
+function showError(msg) {
+  errorBox.textContent = msg;
+  errorBox.style.display = "block";
+}
+
+// Redirect straight to the dashboard if already signed in.
+supabaseClient.auth.getSession().then(({ data }) => {
+  if (data.session) window.location.href = "clients.html";
+});
+
+signUpLink.addEventListener("click", (e) => {
+  e.preventDefault();
+  mode = mode === "signin" ? "signup" : "signin";
+  signInBtn.textContent = mode === "signin" ? "Sign in" : "Create account";
+  signUpLink.textContent = mode === "signin" ? "Create an account" : "Back to sign in";
+});
+
+signInBtn.addEventListener("click", async () => {
+  errorBox.style.display = "none";
+  const email = emailInput.value.trim();
+  const password = passwordInput.value;
+  if (!email || !password) {
+    showError("Enter your email and password.");
+    return;
+  }
+  signInBtn.disabled = true;
+  const action = mode === "signin"
+    ? supabaseClient.auth.signInWithPassword({ email, password })
+    : supabaseClient.auth.signUp({ email, password });
+  const { error } = await action;
+  signInBtn.disabled = false;
+  if (error) {
+    showError(error.message);
+    return;
+  }
+  if (mode === "signup") {
+    showError("Account created. Check your email if confirmation is required, then sign in.");
+    mode = "signin";
+    signInBtn.textContent = "Sign in";
+    signUpLink.textContent = "Create an account";
+    return;
+  }
+  window.location.href = "clients.html";
+});
+</script>
+</body>
+</html>

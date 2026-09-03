@@ -1,0 +1,195 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Clients — Admin</title>
+<link rel="stylesheet" href="../css/style.css" />
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@latest/tabler-icons.min.css" />
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+</head>
+<body>
+
+<div class="app-shell">
+  <nav class="sidebar">
+    <p class="brand">Admin</p>
+    <a href="clients.html" class="active"><i class="ti ti-users"></i> Clients</a>
+    <a href="#" id="signOutLink"><i class="ti ti-logout"></i> Sign out</a>
+  </nav>
+
+  <main class="main">
+    <div class="page-header">
+      <div>
+        <h1>Clients</h1>
+        <p>Businesses you provide the AR service to</p>
+      </div>
+      <button class="btn btn-primary" id="addClientBtn"><i class="ti ti-plus"></i> Add client</button>
+    </div>
+
+    <div class="stats-grid">
+      <div class="stat-card">
+        <p class="label">Clients</p>
+        <p class="value" id="statClients">—</p>
+      </div>
+      <div class="stat-card">
+        <p class="label">Monthly revenue</p>
+        <p class="value" id="statRevenue">—</p>
+      </div>
+      <div class="stat-card">
+        <p class="label">Scans (all time)</p>
+        <p class="value" id="statScans">—</p>
+      </div>
+    </div>
+
+    <div class="row-list" id="clientList">
+      <p style="color:var(--text-secondary); font-size:14px;">Loading…</p>
+    </div>
+  </main>
+</div>
+
+<!-- Add client modal -->
+<div class="modal-overlay" id="addClientModal" style="display:none;">
+  <div class="modal">
+    <h2>Add client</h2>
+    <div class="field">
+      <label>Business name</label>
+      <input type="text" id="newClientName" placeholder="Roma's Cafe" />
+    </div>
+    <div class="field">
+      <label>Monthly fee (USD)</label>
+      <input type="number" id="newClientFee" placeholder="25" min="0" step="0.01" />
+    </div>
+    <div class="field">
+      <label>Status</label>
+      <select id="newClientStatus">
+        <option value="trial">Trial</option>
+        <option value="active">Active</option>
+      </select>
+    </div>
+    <div class="field-error" id="addClientError" style="display:none;"></div>
+    <div class="modal-actions">
+      <button class="btn" id="cancelAddClient">Cancel</button>
+      <button class="btn btn-primary" id="confirmAddClient">Add client</button>
+    </div>
+  </div>
+</div>
+
+<script src="../js/supabase-client.js"></script>
+<script>
+const clientListEl = document.getElementById("clientList");
+const statClients = document.getElementById("statClients");
+const statRevenue = document.getElementById("statRevenue");
+const statScans = document.getElementById("statScans");
+
+async function requireAuth() {
+  const { data } = await supabaseClient.auth.getSession();
+  if (!data.session) window.location.href = "login.html";
+}
+requireAuth();
+
+document.getElementById("signOutLink").addEventListener("click", async (e) => {
+  e.preventDefault();
+  await supabaseClient.auth.signOut();
+  window.location.href = "login.html";
+});
+
+function statusBadge(status) {
+  const map = {
+    active: ["badge-success", "Active"],
+    past_due: ["badge-danger", "Past due"],
+    trial: ["badge-warning", "Trial"],
+    canceled: ["badge-muted", "Canceled"],
+  };
+  const [cls, label] = map[status] || map.trial;
+  return `<span class="badge ${cls}">${label}</span>`;
+}
+
+async function loadClients() {
+  const { data: clients, error } = await supabaseClient
+    .from("clients")
+    .select("*, qr_groups(id, items(id))")
+    .order("created_at", { ascending: false });
+
+  if (error) {
+    clientListEl.innerHTML = `<p class="field-error">${error.message}</p>`;
+    return;
+  }
+
+  if (!clients.length) {
+    clientListEl.innerHTML = `
+      <div class="empty-state">
+        <h3>No clients yet</h3>
+        <p>Add your first business to start creating AR items for them.</p>
+      </div>`;
+    statClients.textContent = "0";
+    statRevenue.textContent = "$0";
+    statScans.textContent = "0";
+    return;
+  }
+
+  statClients.textContent = clients.length;
+  const revenue = clients
+    .filter(c => c.subscription_status === "active")
+    .reduce((sum, c) => sum + Number(c.monthly_fee || 0), 0);
+  statRevenue.textContent = "$" + revenue.toFixed(0);
+
+  const { count: scanCount } = await supabaseClient
+    .from("scans")
+    .select("id", { count: "exact", head: true });
+  statScans.textContent = scanCount ?? 0;
+
+  clientListEl.innerHTML = clients.map(c => {
+    const itemCount = (c.qr_groups || []).reduce((n, g) => n + (g.items || []).length, 0);
+    return `
+      <a href="client.html?id=${c.id}" class="row-item" style="text-decoration:none; color:inherit;">
+        <div class="row-thumb"><i class="ti ti-building-store"></i></div>
+        <div style="flex:1; min-width:0;">
+          <p class="row-title">${c.name}</p>
+          <p class="row-sub">${itemCount} item${itemCount === 1 ? "" : "s"}</p>
+        </div>
+        ${statusBadge(c.subscription_status)}
+        <span style="font-size:14px; font-weight:500; min-width:60px; text-align:right;">
+          ${c.monthly_fee ? "$" + Number(c.monthly_fee).toFixed(0) + "/mo" : "—"}
+        </span>
+        <i class="ti ti-chevron-right" style="color:var(--text-muted);"></i>
+      </a>`;
+  }).join("");
+}
+loadClients();
+
+// ---- Add client modal ----
+const addClientModal = document.getElementById("addClientModal");
+document.getElementById("addClientBtn").addEventListener("click", () => addClientModal.style.display = "flex");
+document.getElementById("cancelAddClient").addEventListener("click", () => addClientModal.style.display = "none");
+
+document.getElementById("confirmAddClient").addEventListener("click", async () => {
+  const name = document.getElementById("newClientName").value.trim();
+  const fee = parseFloat(document.getElementById("newClientFee").value) || 0;
+  const status = document.getElementById("newClientStatus").value;
+  const errorBox = document.getElementById("addClientError");
+  errorBox.style.display = "none";
+
+  if (!name) {
+    errorBox.textContent = "Enter a business name.";
+    errorBox.style.display = "block";
+    return;
+  }
+
+  const { error } = await supabaseClient.from("clients").insert({
+    name, monthly_fee: fee, subscription_status: status,
+  });
+
+  if (error) {
+    errorBox.textContent = error.message;
+    errorBox.style.display = "block";
+    return;
+  }
+
+  addClientModal.style.display = "none";
+  document.getElementById("newClientName").value = "";
+  document.getElementById("newClientFee").value = "";
+  loadClients();
+});
+</script>
+</body>
+</html>

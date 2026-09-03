@@ -1,0 +1,276 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Client — Admin</title>
+<link rel="stylesheet" href="../css/style.css" />
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@latest/tabler-icons.min.css" />
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+</head>
+<body>
+
+<div class="app-shell">
+  <nav class="sidebar">
+    <p class="brand">Admin</p>
+    <a href="clients.html"><i class="ti ti-users"></i> Clients</a>
+    <a href="#" id="signOutLink"><i class="ti ti-logout"></i> Sign out</a>
+  </nav>
+
+  <main class="main">
+    <a href="clients.html" style="font-size:13px; color:var(--text-secondary); display:inline-flex; align-items:center; gap:4px; margin-bottom:14px;">
+      <i class="ti ti-arrow-left"></i> All clients
+    </a>
+
+    <div class="page-header">
+      <div>
+        <h1 id="clientName">—</h1>
+        <p id="clientMeta">—</p>
+      </div>
+      <div style="display:flex; gap:8px;">
+        <button class="btn" id="editClientBtn"><i class="ti ti-edit"></i> Edit</button>
+        <button class="btn btn-primary" id="managePaymentBtn"><i class="ti ti-credit-card"></i> Manage payment</button>
+      </div>
+    </div>
+
+    <div class="stats-grid">
+      <div class="stat-card">
+        <p class="label">QR groups</p>
+        <p class="value" id="statGroups">—</p>
+      </div>
+      <div class="stat-card">
+        <p class="label">Items</p>
+        <p class="value" id="statItems">—</p>
+      </div>
+      <div class="stat-card">
+        <p class="label">Scans (all time)</p>
+        <p class="value" id="statScans">—</p>
+      </div>
+    </div>
+
+    <div class="page-header" style="margin-bottom:12px;">
+      <div><h1 style="font-size:16px;">QR groups</h1></div>
+      <button class="btn btn-primary btn-sm" id="addGroupBtn"><i class="ti ti-plus"></i> Add QR group</button>
+    </div>
+
+    <div class="row-list" id="groupList">
+      <p style="color:var(--text-secondary); font-size:14px;">Loading…</p>
+    </div>
+  </main>
+</div>
+
+<!-- Edit client modal -->
+<div class="modal-overlay" id="editClientModal" style="display:none;">
+  <div class="modal">
+    <h2>Edit client</h2>
+    <div class="field">
+      <label>Business name</label>
+      <input type="text" id="editName" />
+    </div>
+    <div class="field">
+      <label>Monthly fee (USD)</label>
+      <input type="number" id="editFee" min="0" step="0.01" />
+    </div>
+    <div class="field">
+      <label>Status</label>
+      <select id="editStatus">
+        <option value="trial">Trial</option>
+        <option value="active">Active</option>
+        <option value="past_due">Past due</option>
+        <option value="canceled">Canceled</option>
+      </select>
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-danger" id="deleteClientBtn" style="margin-right:auto;"><i class="ti ti-trash"></i> Delete</button>
+      <button class="btn" id="cancelEditClient">Cancel</button>
+      <button class="btn btn-primary" id="saveClientBtn">Save</button>
+    </div>
+  </div>
+</div>
+
+<!-- Add QR group modal -->
+<div class="modal-overlay" id="addGroupModal" style="display:none;">
+  <div class="modal">
+    <h2>Add QR group</h2>
+    <p class="field-hint" style="margin-bottom:14px;">One QR code can hold several items — e.g. a whole menu, or a seasonal set. You can add more items to it later without reprinting the code.</p>
+    <div class="field">
+      <label>Group name</label>
+      <input type="text" id="newGroupName" placeholder="Main menu" />
+    </div>
+    <div class="field-error" id="addGroupError" style="display:none;"></div>
+    <div class="modal-actions">
+      <button class="btn" id="cancelAddGroup">Cancel</button>
+      <button class="btn btn-primary" id="confirmAddGroup">Create</button>
+    </div>
+  </div>
+</div>
+
+<script src="../js/supabase-client.js"></script>
+<script>
+const params = new URLSearchParams(window.location.search);
+const clientId = params.get("id");
+if (!clientId) window.location.href = "clients.html";
+
+async function requireAuth() {
+  const { data } = await supabaseClient.auth.getSession();
+  if (!data.session) window.location.href = "login.html";
+}
+requireAuth();
+
+document.getElementById("signOutLink").addEventListener("click", async (e) => {
+  e.preventDefault();
+  await supabaseClient.auth.signOut();
+  window.location.href = "login.html";
+});
+
+function statusLabel(status) {
+  const map = { active: "Active", past_due: "Past due", trial: "Trial", canceled: "Canceled" };
+  return map[status] || status;
+}
+
+function slugify(text) {
+  return text.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "") + "-" + Math.random().toString(36).slice(2, 7);
+}
+
+let currentClient = null;
+
+async function loadClient() {
+  const { data: client, error } = await supabaseClient.from("clients").select("*").eq("id", clientId).single();
+  if (error || !client) {
+    document.getElementById("clientName").textContent = "Client not found";
+    return;
+  }
+  currentClient = client;
+  document.getElementById("clientName").textContent = client.name;
+  document.getElementById("clientMeta").textContent =
+    `${statusLabel(client.subscription_status)} · ${client.monthly_fee ? "$" + Number(client.monthly_fee).toFixed(0) + "/mo" : "no fee set"}`;
+
+  document.getElementById("editName").value = client.name;
+  document.getElementById("editFee").value = client.monthly_fee || 0;
+  document.getElementById("editStatus").value = client.subscription_status;
+}
+
+async function loadGroups() {
+  const { data: groups, error } = await supabaseClient
+    .from("qr_groups")
+    .select("*, items(id)")
+    .eq("client_id", clientId)
+    .order("created_at", { ascending: false });
+
+  const groupListEl = document.getElementById("groupList");
+  if (error) {
+    groupListEl.innerHTML = `<p class="field-error">${error.message}</p>`;
+    return;
+  }
+
+  document.getElementById("statGroups").textContent = groups.length;
+  document.getElementById("statItems").textContent = groups.reduce((n, g) => n + g.items.length, 0);
+
+  const groupIds = groups.map(g => g.id);
+  let scanCount = 0;
+  if (groupIds.length) {
+    const { count } = await supabaseClient
+      .from("scans")
+      .select("id", { count: "exact", head: true })
+      .in("qr_group_id", groupIds);
+    scanCount = count ?? 0;
+  }
+  document.getElementById("statScans").textContent = scanCount;
+
+  if (!groups.length) {
+    groupListEl.innerHTML = `
+      <div class="empty-state">
+        <h3>No QR groups yet</h3>
+        <p>Create one, then add photo + video items inside it.</p>
+      </div>`;
+    return;
+  }
+
+  groupListEl.innerHTML = groups.map(g => `
+    <a href="group.html?id=${g.id}" class="row-item" style="text-decoration:none; color:inherit;">
+      <div class="row-thumb"><i class="ti ti-qrcode"></i></div>
+      <div style="flex:1; min-width:0;">
+        <p class="row-title">${g.name}</p>
+        <p class="row-sub">${g.items.length} item${g.items.length === 1 ? "" : "s"}</p>
+      </div>
+      <i class="ti ti-chevron-right" style="color:var(--text-muted);"></i>
+    </a>`).join("");
+}
+
+loadClient().then(loadGroups);
+
+// ---- Edit client ----
+const editClientModal = document.getElementById("editClientModal");
+document.getElementById("editClientBtn").addEventListener("click", () => editClientModal.style.display = "flex");
+document.getElementById("cancelEditClient").addEventListener("click", () => editClientModal.style.display = "none");
+
+document.getElementById("saveClientBtn").addEventListener("click", async () => {
+  const name = document.getElementById("editName").value.trim();
+  const fee = parseFloat(document.getElementById("editFee").value) || 0;
+  const status = document.getElementById("editStatus").value;
+  if (!name) return;
+  await supabaseClient.from("clients").update({ name, monthly_fee: fee, subscription_status: status }).eq("id", clientId);
+  editClientModal.style.display = "none";
+  loadClient();
+});
+
+document.getElementById("deleteClientBtn").addEventListener("click", async () => {
+  if (!confirm("Delete this client and all their QR groups and items? This can't be undone.")) return;
+  await supabaseClient.from("clients").delete().eq("id", clientId);
+  window.location.href = "clients.html";
+});
+
+// ---- Manage payment (Stripe) ----
+document.getElementById("managePaymentBtn").addEventListener("click", async () => {
+  const btn = document.getElementById("managePaymentBtn");
+  btn.disabled = true;
+  btn.textContent = "Loading…";
+  try {
+    const res = await fetch("/api/create-checkout-session", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ clientId, monthlyFee: currentClient.monthly_fee, clientName: currentClient.name }),
+    });
+    const data = await res.json();
+    if (data.url) {
+      window.location.href = data.url;
+    } else {
+      alert(data.error || "Could not start checkout.");
+    }
+  } catch (err) {
+    alert("Payment setup isn't connected yet. See the README for the Stripe API step.");
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = '<i class="ti ti-credit-card"></i> Manage payment';
+  }
+});
+
+// ---- Add QR group ----
+const addGroupModal = document.getElementById("addGroupModal");
+document.getElementById("addGroupBtn").addEventListener("click", () => addGroupModal.style.display = "flex");
+document.getElementById("cancelAddGroup").addEventListener("click", () => addGroupModal.style.display = "none");
+
+document.getElementById("confirmAddGroup").addEventListener("click", async () => {
+  const name = document.getElementById("newGroupName").value.trim();
+  const errorBox = document.getElementById("addGroupError");
+  errorBox.style.display = "none";
+  if (!name) {
+    errorBox.textContent = "Enter a name for this QR group.";
+    errorBox.style.display = "block";
+    return;
+  }
+  const { error } = await supabaseClient.from("qr_groups").insert({
+    client_id: clientId, name, slug: slugify(name), buttons: [],
+  });
+  if (error) {
+    errorBox.textContent = error.message;
+    errorBox.style.display = "block";
+    return;
+  }
+  addGroupModal.style.display = "none";
+  document.getElementById("newGroupName").value = "";
+  loadGroups();
+});
+</script>
+</body>
+</html>
