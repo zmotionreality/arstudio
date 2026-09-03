@@ -270,7 +270,7 @@ async function compileTarget(imageFile) {
     image.onerror = reject;
     image.src = URL.createObjectURL(imageFile);
   });
-  const compiler = new window.MINDAR.Compiler();
+  const compiler = new window.MINDAR.IMAGE.Compiler();
   await compiler.compileImageTargets([img], () => {});
   const buffer = await compiler.exportData();
   return new File([buffer], "target.mind", { type: "application/octet-stream" });
@@ -326,7 +326,9 @@ document.getElementById("confirmAddItem").addEventListener("click", async () => 
 });
 </script>
 
-<!-- Needed only for the client-side AR target compiler used above -->
-<script src="https://cdn.jsdelivr.net/npm/mind-ar@1.2.5/dist/mindar-image.prod.js"></script>
-</body>
-</html>
+<!-- Needed only for the client-side AR target compiler used above.
+     type="module" is required: this build of mind-ar is published as an ES module
+     (it uses `import` internally), so loading it as a classic script silently
+     fails and leaves window.MINDAR undefined. -->
+<script type="module" src="https://cdn.jsdelivr.net/npm/mind-ar@1.2.5/dist/mindar-image.prod.js"></script>
+</b
