@@ -260,9 +260,8 @@ async function uploadFile(file) {
   return publicUrl;
 }
 
-// Compiles the trigger photo into a .mind AR target file, entirely in the browser.
 // NOTE: MindAR's compiler API has changed across versions in the past — if this
-// throws, check https://hiukim.github.io/mind-ar-js-doc/tools/compile for the
+// throws, check https://hiukim.github.io/mind-ar-js-doc/core-api/ for the
 // current script tag and class name, and update this function to match.
 async function compileTarget(imageFile) {
   const img = await new Promise((resolve, reject) => {
@@ -271,7 +270,7 @@ async function compileTarget(imageFile) {
     image.onerror = reject;
     image.src = URL.createObjectURL(imageFile);
   });
-  const compiler = new window.MINDAR.IMAGE.Compiler();
+  const compiler = new window.MINDAR.Compiler();
   await compiler.compileImageTargets([img], () => {});
   const buffer = await compiler.exportData();
   return new File([buffer], "target.mind", { type: "application/octet-stream" });
