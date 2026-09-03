@@ -7,7 +7,10 @@
 <link rel="stylesheet" href="../css/style.css" />
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@latest/tabler-icons.min.css" />
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.3/build/qrcode.min.js"></script>
+<!-- Pinned to 1.4.4: from 1.5.x onward this package no longer publishes a
+     ready-to-use browser build/ file to npm (it's only generated locally at
+     install time), so the CDN URL 404s and window.QRCode never gets defined. -->
+<script src="https://cdn.jsdelivr.net/npm/qrcode@1.4.4/build/qrcode.min.js"></script>
 </head>
 <body>
 
@@ -198,7 +201,14 @@ async function loadItems() {
   });
 }
 
-loadGroup().then(loadItems);
+loadGroup().then(loadItems).catch(err => {
+  // Belt-and-suspenders: if loadGroup() throws for any reason (a broken CDN
+  // script, a network hiccup, etc.), don't leave "Items" stuck on "Loading…"
+  // forever with no explanation.
+  console.error(err);
+  document.getElementById("itemList").innerHTML =
+    `<p class="field-error">Something went wrong loading this page. Try refreshing.</p>`;
+});
 
 // ---- Buttons editor ----
 const buttonsModal = document.getElementById("buttonsModal");
@@ -331,4 +341,5 @@ document.getElementById("confirmAddItem").addEventListener("click", async () => 
      (it uses `import` internally), so loading it as a classic script silently
      fails and leaves window.MINDAR undefined. -->
 <script type="module" src="https://cdn.jsdelivr.net/npm/mind-ar@1.2.5/dist/mindar-image.prod.js"></script>
-</b
+</body>
+</html>
