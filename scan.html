@@ -50,6 +50,29 @@
     border-radius:50%; animation:spin 0.8s linear infinite; margin:0 auto 14px;
   }
   @keyframes spin { to { transform:rotate(360deg); } }
+
+  /* Close button shown over the camera/AR view and the fullscreen player —
+     without it there was no way back except force-closing the browser. */
+  #closeArBtn {
+    display:none; position:fixed; top:16px; left:16px; z-index:20;
+    width:38px; height:38px; border-radius:50%; border:none; cursor:pointer;
+    background:rgba(0,0,0,0.5); color:#fff; font-size:18px; line-height:1;
+    align-items:center; justify-content:center;
+  }
+
+  /* Rotate-phone hint: shown briefly when the video's own orientation
+     (portrait/landscape) doesn't match how the phone is currently held. */
+  #rotateHint {
+    display:none; position:fixed; top:16px; left:50%; transform:translateX(-50%);
+    z-index:20; background:rgba(0,0,0,0.65); color:#fff; padding:8px 14px;
+    border-radius:999px; font-size:13px; align-items:center; gap:8px;
+    pointer-events:none; white-space:nowrap;
+  }
+  #rotateHint svg { animation: rotateWiggle 1.4s ease-in-out infinite; }
+  @keyframes rotateWiggle {
+    0%, 100% { transform:rotate(0deg); }
+    50% { transform:rotate(90deg); }
+  }
 </style>
 </head>
 <body>
@@ -70,6 +93,14 @@
 
 <div id="arContainer" style="display:none;"></div>
 <p id="hintOverlay" style="display:none;">Point your camera at the photo</p>
+
+<button id="closeArBtn" aria-label="Close">✕</button>
+<div id="rotateHint">
+  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+    <rect x="6" y="2" width="12" height="20" rx="2" />
+  </svg>
+  Rotate your phone for fullscreen
+</div>
 
 <div class="screen" id="playerScreen">
   <video id="playerVideo" playsinline autoplay></video>
@@ -109,11 +140,66 @@ const hintOverlay = document.getElementById("hintOverlay");
 const playerScreen = document.getElementById("playerScreen");
 const playerVideo = document.getElementById("playerVideo");
 const linkRow = document.getElementById("linkRow");
+const closeArBtn = document.getElementById("closeArBtn");
+const rotateHint = document.getElementById("rotateHint");
 
 function showOnly(el) {
   [loadingScreen, errorScreen, pickerScreen, arContainer, playerScreen].forEach(s => s.style.display = "none");
   el.style.display = el === arContainer ? "block" : "flex";
+
+  // The close (✕) button only makes sense once the camera or the fullscreen
+  // player is actually showing — on every other screen there's nothing to
+  // back out of.
+  const showClose = el === arContainer || el === playerScreen;
+  closeArBtn.style.display = showClose ? "flex" : "none";
+
+  if (el !== playerScreen) {
+    clearTimeout(rotateHintTimeout);
+    rotateHint.style.display = "none";
+  }
 }
+
+// Shows a brief "rotate your phone" hint when the video's own orientation
+// (landscape/portrait) doesn't match how the phone is currently held —
+// otherwise a landscape video plays tiny and letterboxed with no explanation.
+let rotateHintTimeout = null;
+function updateRotateHint() {
+  if (playerScreen.style.display === "none") return;
+  const vw = playerVideo.videoWidth, vh = playerVideo.videoHeight;
+  if (!vw || !vh) { rotateHint.style.display = "none"; return; }
+
+  const videoIsLandscape = vw > vh;
+  const phoneIsPortrait = window.matchMedia("(orientation: portrait)").matches;
+  const mismatch = videoIsLandscape === phoneIsPortrait; // landscape video on a portrait phone, or the reverse
+
+  clearTimeout(rotateHintTimeout);
+  if (mismatch) {
+    rotateHint.style.display = "flex";
+    rotateHintTimeout = setTimeout(() => { rotateHint.style.display = "none"; }, 4000);
+  } else {
+    rotateHint.style.display = "none";
+  }
+}
+playerVideo.addEventListener("loadedmetadata", updateRotateHint);
+window.addEventListener("resize", updateRotateHint);
+window.addEventListener("orientationchange", updateRotateHint);
+
+// Lets people back out of the camera view or the fullscreen player instead
+// of being stuck until they force-close the browser. Goes back to the
+// picker (if this code has more than one item) or restarts the camera for
+// the single item.
+closeArBtn.addEventListener("click", () => {
+  try { playerVideo.pause(); } catch (e) {}
+  try { if (mindarThree) mindarThree.stop(); } catch (e) {}
+  linkRow.style.display = "none";
+  hintOverlay.style.display = "none";
+
+  if (items.length > 1) {
+    showPicker();
+  } else if (items.length === 1) {
+    startAR(items[0]);
+  }
+});
 
 function showError(msg) {
   document.getElementById("errorText").textContent = msg;
