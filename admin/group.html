@@ -31,7 +31,10 @@
         <h1 id="groupName">—</h1>
         <p>This QR code stays the same even if you change the items behind it.</p>
       </div>
-      <button class="btn" id="editButtonsBtn"><i class="ti ti-link"></i> Buttons</button>
+      <div style="display:flex; gap:8px;">
+        <button class="btn" id="editGroupNameBtn"><i class="ti ti-edit"></i> Edit name</button>
+        <button class="btn" id="editButtonsBtn"><i class="ti ti-link"></i> Buttons</button>
+      </div>
     </div>
 
     <div style="display:flex; gap:20px; margin-bottom:28px; align-items:flex-start; flex-wrap:wrap;">
@@ -58,6 +61,23 @@
       <p style="color:var(--text-secondary); font-size:14px;">Loading…</p>
     </div>
   </main>
+</div>
+
+<!-- Edit group name modal -->
+<div class="modal-overlay" id="editGroupNameModal" style="display:none;">
+  <div class="modal">
+    <h2>Edit name</h2>
+    <p class="field-hint" style="margin-bottom:12px;">This is just the label you see in the admin — the QR code and scan link stay exactly the same.</p>
+    <div class="field">
+      <label>Group name</label>
+      <input type="text" id="editGroupNameInput" />
+    </div>
+    <div class="field-error" id="editGroupNameError" style="display:none;"></div>
+    <div class="modal-actions">
+      <button class="btn" id="cancelEditGroupName">Cancel</button>
+      <button class="btn btn-primary" id="saveGroupName">Save</button>
+    </div>
+  </div>
 </div>
 
 <!-- Buttons editor modal -->
@@ -220,6 +240,33 @@ loadGroup().then(loadItems).catch(err => {
   console.error(err);
   document.getElementById("itemList").innerHTML =
     `<p class="field-error">Something went wrong loading this page. Try refreshing.</p>`;
+});
+
+// ---- Edit group name ----
+const editGroupNameModal = document.getElementById("editGroupNameModal");
+document.getElementById("editGroupNameBtn").addEventListener("click", () => {
+  document.getElementById("editGroupNameInput").value = currentGroup?.name || "";
+  document.getElementById("editGroupNameError").style.display = "none";
+  editGroupNameModal.style.display = "flex";
+});
+document.getElementById("cancelEditGroupName").addEventListener("click", () => editGroupNameModal.style.display = "none");
+
+document.getElementById("saveGroupName").addEventListener("click", async () => {
+  const name = document.getElementById("editGroupNameInput").value.trim();
+  const errorBox = document.getElementById("editGroupNameError");
+  if (!name) {
+    errorBox.textContent = "Enter a name.";
+    errorBox.style.display = "block";
+    return;
+  }
+  const { error } = await supabaseClient.from("qr_groups").update({ name }).eq("id", groupId);
+  if (error) {
+    errorBox.textContent = error.message;
+    errorBox.style.display = "block";
+    return;
+  }
+  editGroupNameModal.style.display = "none";
+  loadGroup();
 });
 
 // ---- Buttons editor ----
