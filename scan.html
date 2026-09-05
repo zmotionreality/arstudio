@@ -197,7 +197,7 @@ closeArBtn.addEventListener("click", () => {
   if (items.length > 1) {
     showPicker();
   } else if (items.length === 1) {
-    startAR(items[0]);
+    openItem(items[0]);
   }
 });
 
@@ -243,7 +243,7 @@ async function init() {
   renderButtons(group.buttons);
 
   if (items.length === 1) {
-    startAR(items[0]);
+    openItem(items[0]);
   } else {
     showPicker();
   }
@@ -258,10 +258,31 @@ function showPicker() {
   document.querySelectorAll(".picker-item").forEach(el => {
     el.addEventListener("click", () => {
       const item = items.find(i => i.id === el.dataset.id);
-      startAR(item);
+      openItem(item);
     });
   });
   showOnly(pickerScreen);
+}
+
+// Dispatches to the right experience depending on how this item was set up
+// in the admin panel: "video" items have no AR target at all and should
+// never touch the camera — they go straight to fullscreen playback.
+function openItem(item) {
+  if (item.item_type === "video") {
+    playDirect(item);
+  } else {
+    startAR(item);
+  }
+}
+
+// Plain video item: no camera, no AR — just play the video fullscreen right away.
+function playDirect(item) {
+  logScan(group.id, item.id);
+  playerVideo.src = item.video_url;
+  playerVideo.currentTime = 0;
+  showOnly(playerScreen);
+  linkRow.style.display = "flex";
+  playerVideo.play().catch(() => {});
 }
 
 let mindarThree = null;
