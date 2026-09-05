@@ -94,6 +94,20 @@
   </div>
 </div>
 
+<!-- Item QR modal -->
+<div class="modal-overlay" id="itemQrModal" style="display:none;">
+  <div class="modal" style="text-align:center;">
+    <h2 id="itemQrTitle">QR code</h2>
+    <p class="field-hint" style="margin-bottom:12px;">This code skips straight to this item's video — no group, no picker.</p>
+    <canvas id="itemQrCanvas" style="margin:0 auto 12px;"></canvas>
+    <p id="itemQrLink" style="font-size:13px; word-break:break-all; margin:0 0 14px; color:var(--text-secondary);">—</p>
+    <div class="modal-actions" style="justify-content:center;">
+      <button class="btn" id="closeItemQr">Close</button>
+      <button class="btn btn-primary" id="downloadItemQr"><i class="ti ti-download"></i> Download QR</button>
+    </div>
+  </div>
+</div>
+
 <!-- Add item modal -->
 <div class="modal-overlay" id="addItemModal" style="display:none;">
   <div class="modal">
@@ -139,6 +153,10 @@ if (!groupId) window.location.href = "clients.html";
 
 // Set this to where you deploy the app, e.g. https://your-app.vercel.app
 const SITE_URL = window.location.origin;
+
+function slugify(text) {
+  return text.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "") + "-" + Math.random().toString(36).slice(2, 7);
+}
 
 async function requireAuth() {
   const { data } = await supabaseClient.auth.getSession();
@@ -212,9 +230,32 @@ async function loadItems() {
         <p class="row-sub">${it.item_type === "video" ? "Video only" : "AR"}</p>
       </div>
       <span class="badge ${it.active ? "badge-success" : "badge-muted"}">${it.active ? "Live" : "Hidden"}</span>
+      <button class="btn btn-sm item-qr" data-id="${it.id}" data-slug="${it.slug || ""}" data-name="${it.name}"><i class="ti ti-qrcode"></i></button>
       <button class="btn btn-sm toggle-active" data-id="${it.id}" data-active="${it.active}">${it.active ? "Hide" : "Show"}</button>
       <button class="btn btn-sm btn-danger delete-item" data-id="${it.id}"><i class="ti ti-trash"></i></button>
     </div>`).join("");
+
+  // Each item can have its own QR code (in addition to the group's shared
+  // one) — mainly for text-only menus, where every dish gets its own printed
+  // code that jumps straight to its video, no group/picker involved. Older
+  // items don't have a slug yet, so generate one on first use.
+  document.querySelectorAll(".item-qr").forEach(btn => {
+    btn.addEventListener("click", async () => {
+      let slug = btn.dataset.slug;
+      if (!slug) {
+        slug = slugify(btn.dataset.name || "item");
+        const { error } = await supabaseClient.from("items").update({ slug }).eq("id", btn.dataset.id);
+        if (error) { alert(error.message); return; }
+        btn.dataset.slug = slug;
+      }
+      const scanUrl = `${SITE_URL}/scan.html?i=${slug}`;
+      document.getElementById("itemQrTitle").textContent = btn.dataset.name || "QR code";
+      document.getElementById("itemQrLink").textContent = scanUrl;
+      QRCode.toCanvas(document.getElementById("itemQrCanvas"), scanUrl, { width: 180, margin: 1 });
+      itemQrModal.dataset.filename = (btn.dataset.name || "item").replace(/\s+/g, "-");
+      itemQrModal.style.display = "flex";
+    });
+  });
 
   document.querySelectorAll(".toggle-active").forEach(btn => {
     btn.addEventListener("click", async () => {
@@ -267,6 +308,17 @@ document.getElementById("saveGroupName").addEventListener("click", async () => {
   }
   editGroupNameModal.style.display = "none";
   loadGroup();
+});
+
+// ---- Item QR modal ----
+const itemQrModal = document.getElementById("itemQrModal");
+document.getElementById("closeItemQr").addEventListener("click", () => itemQrModal.style.display = "none");
+document.getElementById("downloadItemQr").addEventListener("click", () => {
+  const canvas = document.getElementById("itemQrCanvas");
+  const link = document.createElement("a");
+  link.download = `${itemQrModal.dataset.filename || "item-qr"}.png`;
+  link.href = canvas.toDataURL("image/png");
+  link.click();
 });
 
 // ---- Buttons editor ----
@@ -397,7 +449,8 @@ document.getElementById("confirmAddItem").addEventListener("click", async () => 
 
     statusEl.textContent = "Saving…";
     const { error } = await supabaseClient.from("items").insert({
-      qr_group_id: groupId, name, item_type: itemType, photo_url: photoUrl, video_url: videoUrl, mind_url: mindUrl,
+      qr_group_id: groupId, name, item_type: itemType, slug: slugify(name),
+      photo_url: photoUrl, video_url: videoUrl, mind_url: mindUrl,
     });
     if (error) throw error;
 
