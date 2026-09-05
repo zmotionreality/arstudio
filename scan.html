@@ -131,6 +131,7 @@ import * as THREE from "three";
 
 const params = new URLSearchParams(window.location.search);
 const groupSlug = params.get("g");
+const itemSlug = params.get("i");
 
 const loadingScreen = document.getElementById("loadingScreen");
 const errorScreen = document.getElementById("errorScreen");
@@ -229,6 +230,7 @@ let group = null;
 let items = [];
 
 async function init() {
+  if (itemSlug) return initByItem();
   if (!groupSlug) return showError("Missing code.");
 
   const { data: g, error: gErr } = await supabaseClient.from("qr_groups").select("*").eq("slug", groupSlug).single();
@@ -247,6 +249,23 @@ async function init() {
   } else {
     showPicker();
   }
+}
+
+// A code printed for one specific item (mainly text-menu dishes): jumps
+// straight to that item's video, skipping the group and any picker.
+async function initByItem() {
+  const { data: it, error: iErr } = await supabaseClient
+    .from("items").select("*").eq("slug", itemSlug).eq("active", true).single();
+  if (iErr || !it) return showError("This code isn't set up yet.");
+
+  const { data: g, error: gErr } = await supabaseClient
+    .from("qr_groups").select("*").eq("id", it.qr_group_id).single();
+  if (gErr || !g) return showError("This code isn't set up yet.");
+
+  group = g;
+  items = [it];
+  renderButtons(group.buttons);
+  openItem(it);
 }
 
 function showPicker() {
