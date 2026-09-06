@@ -110,3 +110,241 @@
     top: 14px;
     right: 14px;
     width: auto;
+    z-index: 3;
+    background: var(--danger);
+    padding: 9px 14px;
+  }
+  #readout {
+    position: absolute;
+    left: 0; right: 0; bottom: 0;
+    z-index: 2;
+    padding: 16px;
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+    background: linear-gradient(to top, rgba(0,0,0,0.85), rgba(0,0,0,0));
+  }
+  #readout .muted { color: rgba(255,255,255,0.6); font-size: 13px; margin: 0; }
+  .detected {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    background: rgba(255,255,255,0.1);
+    border: 1px solid rgba(255,255,255,0.25);
+    border-radius: 8px;
+    padding: 6px 10px 6px 6px;
+  }
+  .detected img { width: 34px; height: 34px; object-fit: cover; border-radius: 6px; }
+  .detected p { color: #fff; font-size: 13px; margin: 0; font-weight: 600; }
+</style>
+</head>
+<body>
+
+<div class="wrap">
+  <h1>Multi-target AR test</h1>
+  <p class="hint">
+    Throwaway test tool — does not touch the live app, the database, or any storage.
+    Everything happens in your browser. Pick 2-4 real dish photos, compile them together
+    into one AR target set, then point your camera at each one to see whether it can
+    reliably tell them apart. Delete this file when you're done testing.
+  </p>
+
+  <div class="card" id="setupCard">
+    <label>Select 2-4 dish photos (in any order)</label>
+    <input type="file" id="fileInput" accept="image/*" multiple />
+    <div class="thumbs" id="thumbs"></div>
+  </div>
+
+  <button id="compileBtn" disabled>1. Compile photos</button>
+  <button id="startBtn" style="display:none; margin-top:10px; background:#2eb872;">2. Start camera test</button>
+  <p id="status"></p>
+  <p id="errorBox"></p>
+</div>
+
+<div id="arScreen">
+  <div id="arContainer"></div>
+  <button id="stopBtn">Stop test</button>
+  <div id="readout"><p class="muted">Point the camera at one of your photos…</p></div>
+</div>
+
+<!-- Two separate library files are needed: one exposes the offline Compiler
+     (used to turn photos into an AR target set), the other exposes MindARThree
+     (used to run the live camera recognition). This matches what group.html
+     and scan.html each load separately in the real app. -->
+<script type="module" src="https://cdn.jsdelivr.net/npm/mind-ar@1.2.5/dist/mindar-image.prod.js"></script>
+<script type="module" src="https://cdn.jsdelivr.net/npm/mind-ar@1.2.5/dist/mindar-image-three.prod.js"></script>
+<script>
+let selectedFiles = [];
+let mindarThree = null;
+let objectUrls = [];
+let compiledMindUrl = null;
+
+const fileInput = document.getElementById("fileInput");
+const thumbs = document.getElementById("thumbs");
+const compileBtn = document.getElementById("compileBtn");
+const startBtn = document.getElementById("startBtn");
+const statusEl = document.getElementById("status");
+const errorBox = document.getElementById("errorBox");
+const arScreen = document.getElementById("arScreen");
+const arContainer = document.getElementById("arContainer");
+const readout = document.getElementById("readout");
+const stopBtn = document.getElementById("stopBtn");
+
+function showError(msg) {
+  errorBox.textContent = msg;
+  errorBox.style.display = "block";
+}
+
+fileInput.addEventListener("change", () => {
+  errorBox.style.display = "none";
+  objectUrls.forEach(u => URL.revokeObjectURL(u));
+  objectUrls = [];
+  compiledMindUrl = null;
+  startBtn.style.display = "none";
+
+  selectedFiles = Array.from(fileInput.files).slice(0, 6);
+  thumbs.innerHTML = selectedFiles.map((f, i) => {
+    const url = URL.createObjectURL(f);
+    objectUrls.push(url);
+    return `<div class="thumb"><img src="${url}" /><p>#${i + 1} ${f.name}</p></div>`;
+  }).join("");
+
+  compileBtn.disabled = selectedFiles.length < 2;
+  if (selectedFiles.length === 1) {
+    statusEl.textContent = "Pick at least 2 photos — the point is testing whether the camera can tell several apart.";
+  } else {
+    statusEl.textContent = "";
+  }
+});
+
+const activeTargets = new Set();
+
+function renderReadout() {
+  if (activeTargets.size === 0) {
+    readout.innerHTML = `<p class="muted">Point the camera at one of your photos…</p>`;
+    return;
+  }
+  readout.innerHTML = [...activeTargets].sort((a, b) => a - b).map(i => {
+    const f = selectedFiles[i];
+    return `<div class="detected"><img src="${objectUrls[i]}" /><p>#${i + 1} — ${f.name}</p></div>`;
+  }).join("");
+}
+
+function mindArReady() {
+  return !!(window.MINDAR && window.MINDAR.IMAGE && window.MINDAR.IMAGE.Compiler && window.MINDAR.IMAGE.MindARThree);
+}
+
+// Step 1: compile the photos into one AR target set. No camera involved yet,
+// so it's fine that this takes a few seconds.
+compileBtn.addEventListener("click", async () => {
+  errorBox.style.display = "none";
+  compileBtn.disabled = true;
+  startBtn.style.display = "none";
+
+  // The two library files load as ES modules, which can finish executing a
+  // beat after the page looks ready — so wait a few seconds for both pieces
+  // to show up instead of failing on the very first check.
+  if (!mindArReady()) {
+    statusEl.textContent = "Waiting for the AR library to finish loading…";
+    const start = Date.now();
+    while (!mindArReady() && Date.now() - start < 8000) {
+      await new Promise(r => setTimeout(r, 200));
+    }
+  }
+  if (!mindArReady()) {
+    showError("MindAR didn't load correctly (missing Compiler or MindARThree). Check your connection and reload.");
+    compileBtn.disabled = false;
+    return;
+  }
+
+  try {
+    statusEl.textContent = "Loading images…";
+    const images = await Promise.all(selectedFiles.map(f => new Promise((resolve, reject) => {
+      const img = new Image();
+      img.onload = () => resolve(img);
+      img.onerror = reject;
+      img.src = URL.createObjectURL(f);
+    })));
+
+    statusEl.textContent = "Compiling AR targets (more photos = slower)…";
+    const compiler = new window.MINDAR.IMAGE.Compiler();
+    await compiler.compileImageTargets(images, (progress) => {
+      statusEl.textContent = `Compiling… ${Math.round(progress)}%`;
+    });
+    const buffer = await compiler.exportData();
+    const blob = new Blob([buffer], { type: "application/octet-stream" });
+    compiledMindUrl = URL.createObjectURL(blob);
+
+    statusEl.textContent = "Ready — tap \"Start camera test\" below.";
+    compileBtn.disabled = false;
+    startBtn.style.display = "block";
+    startBtn.disabled = false;
+  } catch (err) {
+    console.error(err);
+    showError("Error while compiling: " + (err.message || err));
+    compileBtn.disabled = false;
+    statusEl.textContent = "";
+  }
+});
+
+// Step 2: a SEPARATE button tap, right before turning the camera on. Some
+// mobile browsers (notably iOS Safari) silently block video playback if too
+// much time passed since the last tap — keeping this its own fresh tap, with
+// nothing slow happening before mindarThree.start(), avoids that.
+startBtn.addEventListener("click", async () => {
+  errorBox.style.display = "none";
+  startBtn.disabled = true;
+  arScreen.style.display = "block";
+  activeTargets.clear();
+  renderReadout();
+
+  try {
+    mindarThree = new window.MINDAR.IMAGE.MindARThree({
+      container: arContainer,
+      imageTargetSrc: compiledMindUrl,
+      maxTrack: selectedFiles.length,
+    });
+    const { renderer, scene, camera } = mindarThree;
+
+    selectedFiles.forEach((f, i) => {
+      const anchor = mindarThree.addAnchor(i);
+      anchor.onTargetFound = () => { activeTargets.add(i); renderReadout(); };
+      anchor.onTargetLost = () => { activeTargets.delete(i); renderReadout(); };
+    });
+
+    // If the browser silently blocks the camera from actually starting (seen
+    // on some mobile browsers), start() can hang forever with no error. A
+    // timeout means we show a message and give back control instead of being
+    // stuck on a black fullscreen screen forever.
+    const timeout = new Promise((_, reject) =>
+      setTimeout(() => reject(new Error("Camera didn't start within 12s — your browser may be blocking it. Try reloading the page and tapping \"Start camera test\" again right away.")), 12000)
+    );
+    await Promise.race([mindarThree.start(), timeout]);
+    renderer.setAnimationLoop(() => renderer.render(scene, camera));
+  } catch (err) {
+    console.error(err);
+    showError(err.message || String(err));
+    try { if (mindarThree) await mindarThree.stop(); } catch (e2) { console.error(e2); }
+    mindarThree = null;
+    arScreen.style.display = "none";
+    startBtn.disabled = false;
+  }
+});
+
+stopBtn.addEventListener("click", async () => {
+  try {
+    if (mindarThree) {
+      mindarThree.renderer.setAnimationLoop(null);
+      await mindarThree.stop();
+      mindarThree = null;
+    }
+  } catch (err) {
+    console.error(err);
+  }
+  arScreen.style.display = "none";
+  startBtn.disabled = false;
+  statusEl.textContent = "Stopped. Tap \"Start camera test\" to try again, or pick new photos.";
+});
+</script>
+</body>
+</html>
