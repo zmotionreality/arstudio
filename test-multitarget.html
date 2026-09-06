@@ -167,6 +167,16 @@
   <div id="readout"><p class="muted">Point the camera at one of your photos…</p></div>
 </div>
 
+<!-- mindar-image-three.prod.js imports "three" internally (mind-ar doesn't
+     bundle it), so the browser needs to be told where to find it — otherwise
+     it fails silently and the camera never actually starts. -->
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.150.1/build/three.module.js"
+  }
+}
+</script>
 <!-- Two separate library files are needed: one exposes the offline Compiler
      (used to turn photos into an AR target set), the other exposes MindARThree
      (used to run the live camera recognition). This matches what group.html
