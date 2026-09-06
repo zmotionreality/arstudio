@@ -1,1 +1,296 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Multi-target AR test (throwaway)</title>
+<style>
+  :root {
+    --bg: #0f1115;
+    --card: #171a21;
+    --border: #2a2f3a;
+    --text: #e8eaed;
+    --text-secondary: #9aa1ac;
+    --accent: #4f8cff;
+    --danger: #ff5a5a;
+    --radius: 10px;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+  }
+  .wrap { max-width: 640px; margin: 0 auto; padding: 24px 18px 60px; }
+  h1 { font-size: 19px; margin: 0 0 6px; }
+  p.hint { color: var(--text-secondary); font-size: 13.5px; line-height: 1.5; margin: 0 0 20px; }
+  .card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 16px;
+    margin-bottom: 16px;
+  }
+  label { display: block; font-size: 13px; font-weight: 600; margin-bottom: 8px; }
+  input[type="file"] {
+    width: 100%;
+    color: var(--text);
+    font-size: 13px;
+  }
+  .thumbs {
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+    margin-top: 14px;
+  }
+  .thumb {
+    width: 84px;
+    text-align: center;
+  }
+  .thumb img {
+    width: 84px;
+    height: 84px;
+    object-fit: cover;
+    border-radius: 8px;
+    border: 1px solid var(--border);
+    display: block;
+  }
+  .thumb p {
+    font-size: 11px;
+    color: var(--text-secondary);
+    margin: 4px 0 0;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  button {
+    font: inherit;
+    font-weight: 600;
+    font-size: 14px;
+    border: none;
+    border-radius: var(--radius);
+    padding: 11px 16px;
+    cursor: pointer;
+    background: var(--accent);
+    color: #fff;
+    width: 100%;
+  }
+  button:disabled { opacity: 0.4; cursor: not-allowed; }
+  #status {
+    font-size: 13px;
+    color: var(--text-secondary);
+    margin-top: 12px;
+    min-height: 18px;
+  }
+  #errorBox {
+    font-size: 13px;
+    color: var(--danger);
+    margin-top: 12px;
+    display: none;
+    white-space: pre-wrap;
+  }
 
+  /* Fullscreen AR test view */
+  #arScreen {
+    display: none;
+    position: fixed;
+    inset: 0;
+    z-index: 100;
+    background: #000;
+  }
+  #arContainer { position: absolute; inset: 0; }
+  #arContainer video, #arContainer canvas {
+    width: 100% !important;
+    height: 100% !important;
+    object-fit: cover;
+  }
+  #stopBtn {
+    position: absolute;
+    top: 14px;
+    right: 14px;
+    width: auto;
+    z-index: 3;
+    background: var(--danger);
+    padding: 9px 14px;
+  }
+  #readout {
+    position: absolute;
+    left: 0; right: 0; bottom: 0;
+    z-index: 2;
+    padding: 16px;
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+    background: linear-gradient(to top, rgba(0,0,0,0.85), rgba(0,0,0,0));
+  }
+  #readout .muted { color: rgba(255,255,255,0.6); font-size: 13px; margin: 0; }
+  .detected {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    background: rgba(255,255,255,0.1);
+    border: 1px solid rgba(255,255,255,0.25);
+    border-radius: 8px;
+    padding: 6px 10px 6px 6px;
+  }
+  .detected img { width: 34px; height: 34px; object-fit: cover; border-radius: 6px; }
+  .detected p { color: #fff; font-size: 13px; margin: 0; font-weight: 600; }
+</style>
+</head>
+<body>
+
+<div class="wrap">
+  <h1>Multi-target AR test</h1>
+  <p class="hint">
+    Throwaway test tool — does not touch the live app, the database, or any storage.
+    Everything happens in your browser. Pick 2-4 real dish photos, compile them together
+    into one AR target set, then point your camera at each one to see whether it can
+    reliably tell them apart. Delete this file when you're done testing.
+  </p>
+
+  <div class="card" id="setupCard">
+    <label>Select 2-4 dish photos (in any order)</label>
+    <input type="file" id="fileInput" accept="image/*" multiple />
+    <div class="thumbs" id="thumbs"></div>
+  </div>
+
+  <button id="compileBtn" disabled>Compile &amp; start camera test</button>
+  <p id="status"></p>
+  <p id="errorBox"></p>
+</div>
+
+<div id="arScreen">
+  <div id="arContainer"></div>
+  <button id="stopBtn">Stop test</button>
+  <div id="readout"><p class="muted">Point the camera at one of your photos…</p></div>
+</div>
+
+<script type="module" src="https://cdn.jsdelivr.net/npm/mind-ar@1.2.5/dist/mindar-image-three.prod.js"></script>
+<script>
+let selectedFiles = [];
+let mindarThree = null;
+let objectUrls = [];
+
+const fileInput = document.getElementById("fileInput");
+const thumbs = document.getElementById("thumbs");
+const compileBtn = document.getElementById("compileBtn");
+const statusEl = document.getElementById("status");
+const errorBox = document.getElementById("errorBox");
+const arScreen = document.getElementById("arScreen");
+const arContainer = document.getElementById("arContainer");
+const readout = document.getElementById("readout");
+const stopBtn = document.getElementById("stopBtn");
+
+function showError(msg) {
+  errorBox.textContent = msg;
+  errorBox.style.display = "block";
+}
+
+fileInput.addEventListener("change", () => {
+  errorBox.style.display = "none";
+  objectUrls.forEach(u => URL.revokeObjectURL(u));
+  objectUrls = [];
+
+  selectedFiles = Array.from(fileInput.files).slice(0, 6);
+  thumbs.innerHTML = selectedFiles.map((f, i) => {
+    const url = URL.createObjectURL(f);
+    objectUrls.push(url);
+    return `<div class="thumb"><img src="${url}" /><p>#${i + 1} ${f.name}</p></div>`;
+  }).join("");
+
+  compileBtn.disabled = selectedFiles.length < 2;
+  if (selectedFiles.length === 1) {
+    statusEl.textContent = "Pick at least 2 photos — the point is testing whether the camera can tell several apart.";
+  } else {
+    statusEl.textContent = "";
+  }
+});
+
+const activeTargets = new Set();
+
+function renderReadout() {
+  if (activeTargets.size === 0) {
+    readout.innerHTML = `<p class="muted">Point the camera at one of your photos…</p>`;
+    return;
+  }
+  readout.innerHTML = [...activeTargets].sort((a, b) => a - b).map(i => {
+    const f = selectedFiles[i];
+    return `<div class="detected"><img src="${objectUrls[i]}" /><p>#${i + 1} — ${f.name}</p></div>`;
+  }).join("");
+}
+
+compileBtn.addEventListener("click", async () => {
+  errorBox.style.display = "none";
+  compileBtn.disabled = true;
+
+  if (!window.MINDAR || !window.MINDAR.IMAGE || !window.MINDAR.IMAGE.Compiler || !window.MINDAR.IMAGE.MindARThree) {
+    showError("MindAR didn't load correctly (missing Compiler or MindARThree). Check your connection and reload.");
+    compileBtn.disabled = false;
+    return;
+  }
+
+  try {
+    statusEl.textContent = "Loading images…";
+    const images = await Promise.all(selectedFiles.map(f => new Promise((resolve, reject) => {
+      const img = new Image();
+      img.onload = () => resolve(img);
+      img.onerror = reject;
+      img.src = URL.createObjectURL(f);
+    })));
+
+    statusEl.textContent = "Compiling AR targets (more photos = slower)…";
+    const compiler = new window.MINDAR.IMAGE.Compiler();
+    await compiler.compileImageTargets(images, (progress) => {
+      statusEl.textContent = `Compiling… ${Math.round(progress)}%`;
+    });
+    const buffer = await compiler.exportData();
+    const blob = new Blob([buffer], { type: "application/octet-stream" });
+    const mindUrl = URL.createObjectURL(blob);
+
+    statusEl.textContent = "Starting camera…";
+    arScreen.style.display = "block";
+    activeTargets.clear();
+    renderReadout();
+
+    mindarThree = new window.MINDAR.IMAGE.MindARThree({
+      container: arContainer,
+      imageTargetSrc: mindUrl,
+      maxTrack: selectedFiles.length,
+    });
+    const { renderer, scene, camera } = mindarThree;
+
+    selectedFiles.forEach((f, i) => {
+      const anchor = mindarThree.addAnchor(i);
+      anchor.onTargetFound = () => { activeTargets.add(i); renderReadout(); };
+      anchor.onTargetLost = () => { activeTargets.delete(i); renderReadout(); };
+    });
+
+    await mindarThree.start();
+    renderer.setAnimationLoop(() => renderer.render(scene, camera));
+  } catch (err) {
+    console.error(err);
+    showError("Error: " + (err.message || err));
+    arScreen.style.display = "none";
+    compileBtn.disabled = false;
+    statusEl.textContent = "";
+  }
+});
+
+stopBtn.addEventListener("click", async () => {
+  try {
+    if (mindarThree) {
+      mindarThree.renderer.setAnimationLoop(null);
+      await mindarThree.stop();
+      mindarThree = null;
+    }
+  } catch (err) {
+    console.error(err);
+  }
+  arScreen.style.display = "none";
+  compileBtn.disabled = false;
+  statusEl.textContent = "Stopped. Pick photos again (or the same ones) and test again whenever you like.";
+});
+</script>
+</body>
+</html>
