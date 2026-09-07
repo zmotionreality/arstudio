@@ -395,6 +395,16 @@ async function startAR(arItemsList) {
       container: arContainer,
       imageTargetSrc: group.mind_url,
       maxTrack: validItems.length,
+      // MindAR has its own built-in scanning overlay (corner brackets + a
+      // moving line) that it injects directly into <body>, completely
+      // separate from our own screens — and it never cleans those elements
+      // up when a session stops. Every restart was leaving another one
+      // behind, sometimes frozen visible on top of the video. We already
+      // have our own loading screen and "point your camera" hint, so turn
+      // MindAR's own copies off entirely instead of fighting its cleanup.
+      uiLoading: "no",
+      uiScanning: "no",
+      uiError: "no",
     });
     const { renderer, scene, camera } = mindarThree;
 
