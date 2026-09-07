@@ -54,8 +54,12 @@
 
     <div class="page-header" style="margin-bottom:12px;">
       <div><h1 style="font-size:16px;">Items</h1></div>
-      <button class="btn btn-primary btn-sm" id="addItemBtn"><i class="ti ti-plus"></i> Add item</button>
+      <div style="display:flex; gap:8px;">
+        <button class="btn btn-sm" id="rebuildArBtn"><i class="ti ti-refresh"></i> Rebuild AR</button>
+        <button class="btn btn-primary btn-sm" id="addItemBtn"><i class="ti ti-plus"></i> Add item</button>
+      </div>
     </div>
+    <p id="arSyncStatus" style="display:none; font-size:13px; color:var(--text-secondary); margin:-6px 0 12px;"></p>
 
     <div class="row-list" id="itemList">
       <p style="color:var(--text-secondary); font-size:14px;">Loading…</p>
@@ -230,9 +234,9 @@ async function loadItems() {
         <p class="row-sub">${it.item_type === "video" ? "Video only" : "AR"}</p>
       </div>
       <span class="badge ${it.active ? "badge-success" : "badge-muted"}">${it.active ? "Live" : "Hidden"}</span>
-      <button class="btn btn-sm item-qr" data-id="${it.id}" data-slug="${it.slug || ""}" data-name="${it.name}"><i class="ti ti-qrcode"></i></button>
-      <button class="btn btn-sm toggle-active" data-id="${it.id}" data-active="${it.active}">${it.active ? "Hide" : "Show"}</button>
-      <button class="btn btn-sm btn-danger delete-item" data-id="${it.id}"><i class="ti ti-trash"></i></button>
+      ${it.item_type === "video" ? `<button class="btn btn-sm item-qr" data-id="${it.id}" data-slug="${it.slug || ""}" data-name="${it.name}"><i class="ti ti-qrcode"></i></button>` : ""}
+      <button class="btn btn-sm toggle-active" data-id="${it.id}" data-active="${it.active}" data-type="${it.item_type}">${it.active ? "Hide" : "Show"}</button>
+      <button class="btn btn-sm btn-danger delete-item" data-id="${it.id}" data-type="${it.item_type}"><i class="ti ti-trash"></i></button>
     </div>`).join("");
 
   // Each item can have its own QR code (in addition to the group's shared
@@ -261,15 +265,22 @@ async function loadItems() {
     btn.addEventListener("click", async () => {
       const id = btn.dataset.id;
       const active = btn.dataset.active === "true";
+      const isAr = btn.dataset.type === "ar";
       await supabaseClient.from("items").update({ active: !active }).eq("id", id);
       loadItems();
+      // Hiding/showing an AR item changes which photos the shared QR code
+      // should recognize, so the group's combined AR file needs rebuilding.
+      // Video-only items don't touch it.
+      if (isAr) recompileGroupMind();
     });
   });
   document.querySelectorAll(".delete-item").forEach(btn => {
     btn.addEventListener("click", async () => {
       if (!confirm("Delete this item?")) return;
+      const wasAr = btn.dataset.type === "ar";
       await supabaseClient.from("items").delete().eq("id", btn.dataset.id);
       loadItems();
+      if (wasAr) recompileGroupMind();
     });
   });
 }
@@ -329,153 +340,4 @@ function renderButtonRow(btn = { label: "", url: "" }) {
   const row = document.createElement("div");
   row.style.cssText = "display:flex; gap:6px; margin-bottom:8px;";
   row.innerHTML = `
-    <input type="text" placeholder="Label (Instagram)" class="btn-label" value="${btn.label || ""}" style="flex:1; border:1px solid var(--border-strong); border-radius:var(--radius); padding:7px 9px;" />
-    <input type="url" placeholder="https://..." class="btn-url" value="${btn.url || ""}" style="flex:2; border:1px solid var(--border-strong); border-radius:var(--radius); padding:7px 9px;" />
-    <button class="btn btn-sm remove-row" type="button"><i class="ti ti-x"></i></button>`;
-  row.querySelector(".remove-row").addEventListener("click", () => row.remove());
-  buttonRowsEl.appendChild(row);
-}
-
-document.getElementById("editButtonsBtn").addEventListener("click", () => {
-  buttonRowsEl.innerHTML = "";
-  const existing = (currentGroup?.buttons || []);
-  if (existing.length) existing.forEach(renderButtonRow);
-  else renderButtonRow();
-  buttonsModal.style.display = "flex";
-});
-document.getElementById("addButtonRow").addEventListener("click", () => renderButtonRow());
-document.getElementById("cancelButtons").addEventListener("click", () => buttonsModal.style.display = "none");
-
-document.getElementById("saveButtons").addEventListener("click", async () => {
-  const rows = [...buttonRowsEl.children];
-  const buttons = rows.map(row => ({
-    label: row.querySelector(".btn-label").value.trim(),
-    url: row.querySelector(".btn-url").value.trim(),
-  })).filter(b => b.label && b.url);
-
-  await supabaseClient.from("qr_groups").update({ buttons }).eq("id", groupId);
-  currentGroup.buttons = buttons;
-  buttonsModal.style.display = "none";
-});
-
-// ---- Add item (upload photo + video, compile AR target) ----
-const addItemModal = document.getElementById("addItemModal");
-document.getElementById("addItemBtn").addEventListener("click", () => addItemModal.style.display = "flex");
-document.getElementById("cancelAddItem").addEventListener("click", () => addItemModal.style.display = "none");
-
-function getSelectedItemType() {
-  return document.querySelector('input[name="itemType"]:checked').value;
-}
-
-// Swap the photo field's hint depending on whether it's an AR trigger image
-// or just a preview thumbnail for a plain-video item.
-function updateItemTypeHint() {
-  const isVideo = getSelectedItemType() === "video";
-  document.getElementById("itemPhotoLabel").textContent = isVideo
-    ? "Photo (preview thumbnail)"
-    : "Photo (what the camera looks for)";
-  document.getElementById("itemTypeHint").textContent = isVideo
-    ? "No AR recognition — the video opens fullscreen right away. The photo is just shown as a thumbnail."
-    : "The photo below is what the camera scans to trigger the video.";
-}
-document.getElementById("itemTypeAr").addEventListener("change", updateItemTypeHint);
-document.getElementById("itemTypeVideo").addEventListener("change", updateItemTypeHint);
-
-// Uploads a file straight from the browser to Cloudflare R2, using a
-// short-lived link issued by our own /api/get-upload-url function. The R2
-// secret keys never touch the browser — only that one-time link does.
-async function uploadFile(file) {
-  const res = await fetch("/api/get-upload-url", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ fileName: file.name, contentType: file.type || "application/octet-stream" }),
-  });
-  const { uploadUrl, publicUrl, error } = await res.json();
-  if (error) throw new Error(error);
-
-  const putRes = await fetch(uploadUrl, { method: "PUT", body: file, headers: { "Content-Type": file.type || "application/octet-stream" } });
-  if (!putRes.ok) throw new Error("Upload to storage failed.");
-
-  return publicUrl;
-}
-
-// NOTE: MindAR's compiler API has changed across versions in the past — if this
-// throws, check https://hiukim.github.io/mind-ar-js-doc/core-api/ for the
-// current script tag and class name, and update this function to match.
-async function compileTarget(imageFile) {
-  const img = await new Promise((resolve, reject) => {
-    const image = new Image();
-    image.onload = () => resolve(image);
-    image.onerror = reject;
-    image.src = URL.createObjectURL(imageFile);
-  });
-  const compiler = new window.MINDAR.IMAGE.Compiler();
-  await compiler.compileImageTargets([img], () => {});
-  const buffer = await compiler.exportData();
-  return new File([buffer], "target.mind", { type: "application/octet-stream" });
-}
-
-document.getElementById("confirmAddItem").addEventListener("click", async () => {
-  const name = document.getElementById("itemName").value.trim();
-  const itemType = getSelectedItemType();
-  const photoFile = document.getElementById("itemPhoto").files[0];
-  const videoFile = document.getElementById("itemVideo").files[0];
-  const errorBox = document.getElementById("addItemError");
-  const statusEl = document.getElementById("uploadStatus");
-  errorBox.style.display = "none";
-
-  if (!name || !photoFile || !videoFile) {
-    errorBox.textContent = "Fill in the name and choose both files.";
-    errorBox.style.display = "block";
-    return;
-  }
-
-  const confirmBtn = document.getElementById("confirmAddItem");
-  confirmBtn.disabled = true;
-
-  try {
-    statusEl.textContent = "Uploading photo…";
-    const photoUrl = await uploadFile(photoFile);
-
-    statusEl.textContent = "Uploading video…";
-    const videoUrl = await uploadFile(videoFile);
-
-    let mindUrl = null;
-    if (itemType === "ar") {
-      statusEl.textContent = "Preparing AR recognition (this can take a few seconds)…";
-      const mindFile = await compileTarget(photoFile);
-      mindUrl = await uploadFile(mindFile);
-    }
-
-    statusEl.textContent = "Saving…";
-    const { error } = await supabaseClient.from("items").insert({
-      qr_group_id: groupId, name, item_type: itemType, slug: slugify(name),
-      photo_url: photoUrl, video_url: videoUrl, mind_url: mindUrl,
-    });
-    if (error) throw error;
-
-    addItemModal.style.display = "none";
-    statusEl.textContent = "";
-    document.getElementById("itemName").value = "";
-    document.getElementById("itemPhoto").value = "";
-    document.getElementById("itemVideo").value = "";
-    document.getElementById("itemTypeAr").checked = true;
-    updateItemTypeHint();
-    loadItems();
-  } catch (err) {
-    errorBox.textContent = err.message || "Something went wrong.";
-    errorBox.style.display = "block";
-    statusEl.textContent = "";
-  } finally {
-    confirmBtn.disabled = false;
-  }
-});
-</script>
-
-<!-- Needed only for the client-side AR target compiler used above.
-     type="module" is required: this build of mind-ar is published as an ES module
-     (it uses `import` internally), so loading it as a classic script silently
-     fails and leaves window.MINDAR undefined. -->
-<script type="module" src="https://cdn.jsdelivr.net/npm/mind-ar@1.2.5/dist/mindar-image.prod.js"></script>
-</body>
-</html>
+    <input type="text" placeholder="Label
