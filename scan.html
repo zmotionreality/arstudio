@@ -187,15 +187,18 @@ window.addEventListener("orientationchange", updateRotateHint);
 
 // Lets people back out of the camera view or the fullscreen player instead
 // of being stuck until they force-close the browser. Goes back to the
-// picker (if this code has more than one item) or restarts the camera for
-// the single item.
+// picker (if this code has more than one item and isn't in combined-AR
+// mode), restarts the combined AR session (if it is), or restarts the
+// camera for the single item.
 closeArBtn.addEventListener("click", () => {
   try { playerVideo.pause(); } catch (e) {}
   try { if (mindarThree) mindarThree.stop(); } catch (e) {}
   linkRow.style.display = "none";
   hintOverlay.style.display = "none";
 
-  if (items.length > 1) {
+  if (combinedMode) {
+    startAR(currentArItems);
+  } else if (items.length > 1) {
     showPicker();
   } else if (items.length === 1) {
     openItem(items[0]);
@@ -244,8 +247,18 @@ async function init() {
 
   renderButtons(group.buttons);
 
+  const arItems = items.filter(it => it.item_type === "ar");
+
   if (items.length === 1) {
     openItem(items[0]);
+  } else if (arItems.length === items.length && arItems.length > 1) {
+    // Every active item behind this code is an AR photo — recognize any of
+    // them off one shared camera session instead of making people pick
+    // first. A group that mixes AR photos with video-only items keeps the
+    // picker below, since video-only items don't have anything for the
+    // camera to look for.
+    combinedMode = true;
+    startAR(arItems);
   } else {
     showPicker();
   }
@@ -290,7 +303,7 @@ function openItem(item) {
   if (item.item_type === "video") {
     playDirect(item);
   } else {
-    startAR(item);
+    startAR([item]);
   }
 }
 
@@ -305,55 +318,58 @@ function playDirect(item) {
 }
 
 let mindarThree = null;
+let combinedMode = false; // true once a no-picker, multi-photo AR session has started
+let currentArItems = []; // the AR item(s) behind the running/last-started session, for the ✕ button to restart
 
-async function startAR(item) {
+function mindArReady() {
+  return !!(window.MINDAR && window.MINDAR.IMAGE && window.MINDAR.IMAGE.MindARThree);
+}
+
+// Runs ONE camera session recognizing every item in arItemsList against the
+// group's single shared AR file (qr_groups.mind_url) — this is what lets a
+// photo-menu's QR code tell several dishes apart with no picker screen.
+// A lone AR item (from the picker, or a code with only one item) is just the
+// length-1 case of the same thing: one anchor, on the same shared file, at
+// that item's own target_index.
+async function startAR(arItemsList) {
+  currentArItems = arItemsList;
+
+  if (!group.mind_url) {
+    showError("AR recognition isn't set up for this yet. Ask the business to rebuild it in the admin panel.");
+    return;
+  }
+  const validItems = arItemsList.filter(it => typeof it.target_index === "number");
+  if (!validItems.length) {
+    showError("AR recognition isn't set up for this yet. Ask the business to rebuild it in the admin panel.");
+    return;
+  }
+
   showOnly(loadingScreen);
   document.querySelector("#loadingScreen .status-text").textContent = "Starting camera…";
 
-  logScan(group.id, item.id);
+  // The MindAR library loads as an ES module, which can finish executing a
+  // beat after this script runs — wait briefly instead of failing outright.
+  if (!mindArReady()) {
+    const start = Date.now();
+    while (!mindArReady() && Date.now() - start < 8000) {
+      await new Promise(r => setTimeout(r, 200));
+    }
+  }
+  if (!mindArReady()) {
+    showError("Couldn't load the camera. Check your connection and reload.");
+    return;
+  }
 
   arContainer.innerHTML = "";
   try {
     mindarThree = new window.MINDAR.IMAGE.MindARThree({
       container: arContainer,
-      imageTargetSrc: item.mind_url,
+      imageTargetSrc: group.mind_url,
+      maxTrack: validItems.length,
     });
     const { renderer, scene, camera } = mindarThree;
-    const anchor = mindarThree.addAnchor(0);
-
-    const video = document.createElement("video");
-    video.src = item.video_url;
-    video.playsInline = true;
-    video.muted = false;
-    video.crossOrigin = "anonymous";
-
-    const texture = new THREE.VideoTexture(video);
-    const geometry = new THREE.PlaneGeometry(1, 1);
-    const material = new THREE.MeshBasicMaterial({ map: texture });
-    const plane = new THREE.Mesh(geometry, material);
-    anchor.group.add(plane);
 
     let switched = false;
-    anchor.onTargetFound = () => {
-      hintOverlay.style.display = "none";
-      video.play().catch(() => {});
-      // After a couple of seconds of confirmed playback, drop out of the
-      // camera view into a normal fullscreen video — "continue without aiming".
-      setTimeout(() => {
-        if (!switched && !video.paused) switchToFullscreenPlayer(video);
-      }, 2500);
-    };
-    anchor.onTargetLost = () => {
-      if (!switched) hintOverlay.style.display = "block";
-    };
-
-    showOnly(arContainer);
-    hintOverlay.style.display = "block";
-    linkRow.style.display = "flex";
-
-    await mindarThree.start();
-    renderer.setAnimationLoop(() => renderer.render(scene, camera));
-
     function switchToFullscreenPlayer(camVideo) {
       switched = true;
       playerVideo.src = camVideo.src;
@@ -363,8 +379,54 @@ async function startAR(item) {
       linkRow.style.display = "flex";
       playerVideo.play().catch(() => {});
     }
+
+    validItems.forEach(item => {
+      const anchor = mindarThree.addAnchor(item.target_index);
+
+      const video = document.createElement("video");
+      video.src = item.video_url;
+      video.playsInline = true;
+      video.muted = false;
+      video.crossOrigin = "anonymous";
+
+      const texture = new THREE.VideoTexture(video);
+      const geometry = new THREE.PlaneGeometry(1, 1);
+      const material = new THREE.MeshBasicMaterial({ map: texture });
+      const plane = new THREE.Mesh(geometry, material);
+      anchor.group.add(plane);
+
+      let logged = false;
+      anchor.onTargetFound = () => {
+        hintOverlay.style.display = "none";
+        if (!logged) { logged = true; logScan(group.id, item.id); }
+        video.play().catch(() => {});
+        // After a couple of seconds of confirmed playback, drop out of the
+        // camera view into a normal fullscreen video — "continue without aiming".
+        setTimeout(() => {
+          if (!switched && !video.paused) switchToFullscreenPlayer(video);
+        }, 2500);
+      };
+      anchor.onTargetLost = () => {
+        if (!switched) hintOverlay.style.display = "block";
+      };
+    });
+
+    showOnly(arContainer);
+    hintOverlay.style.display = "block";
+    linkRow.style.display = "flex";
+
+    // If the browser silently blocks the camera from actually starting (seen
+    // on some mobile browsers), start() can hang forever with no error —
+    // a timeout means people see a message instead of a stuck black screen.
+    const timeout = new Promise((_, reject) =>
+      setTimeout(() => reject(new Error("timeout")), 12000)
+    );
+    await Promise.race([mindarThree.start(), timeout]);
+    renderer.setAnimationLoop(() => renderer.render(scene, camera));
   } catch (err) {
-    showError("Couldn't start the camera. Make sure camera access is allowed.");
+    console.error(err);
+    try { if (mindarThree) mindarThree.stop(); } catch (e2) {}
+    showError("Couldn't start the camera. Make sure camera access is allowed, then reload and try again.");
   }
 }
 
