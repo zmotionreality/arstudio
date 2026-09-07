@@ -195,9 +195,14 @@ window.addEventListener("orientationchange", updateRotateHint);
 // camera for the single item.
 closeArBtn.addEventListener("click", async () => {
   try { playerVideo.pause(); } catch (e) {}
-  await stopMindAR();
   linkRow.style.display = "none";
   hintOverlay.style.display = "none";
+  // Give instant visual feedback the tap registered — otherwise, while the
+  // camera is being released and restarted underneath, the screen doesn't
+  // change for a moment and the button can feel unresponsive/stuck.
+  showOnly(loadingScreen);
+  document.querySelector("#loadingScreen .status-text").textContent = "Restarting camera…";
+  await stopMindAR();
 
   if (combinedMode) {
     startAR(currentArItems);
@@ -342,7 +347,10 @@ async function stopMindAR() {
     mt.renderer.setAnimationLoop(null);
     await mt.stop();
   } catch (e) { console.error(e); }
-  await new Promise(r => setTimeout(r, 300));
+  // Give iOS a moment to actually release the camera hardware before
+  // anything requests it again — stopping the tracks returns instantly, but
+  // the phone can still be mid-teardown for a bit longer than that.
+  await new Promise(r => setTimeout(r, 700));
 }
 
 // Runs ONE camera session recognizing every item in arItemsList against the
