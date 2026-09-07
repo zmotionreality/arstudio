@@ -340,4 +340,214 @@ function renderButtonRow(btn = { label: "", url: "" }) {
   const row = document.createElement("div");
   row.style.cssText = "display:flex; gap:6px; margin-bottom:8px;";
   row.innerHTML = `
-    <input type="text" placeholder="Label
+    <input type="text" placeholder="Label (Instagram)" class="btn-label" value="${btn.label || ""}" style="flex:1; border:1px solid var(--border-strong); border-radius:var(--radius); padding:7px 9px;" />
+    <input type="url" placeholder="https://..." class="btn-url" value="${btn.url || ""}" style="flex:2; border:1px solid var(--border-strong); border-radius:var(--radius); padding:7px 9px;" />
+    <button class="btn btn-sm remove-row" type="button"><i class="ti ti-x"></i></button>`;
+  row.querySelector(".remove-row").addEventListener("click", () => row.remove());
+  buttonRowsEl.appendChild(row);
+}
+
+document.getElementById("editButtonsBtn").addEventListener("click", () => {
+  buttonRowsEl.innerHTML = "";
+  const existing = (currentGroup?.buttons || []);
+  if (existing.length) existing.forEach(renderButtonRow);
+  else renderButtonRow();
+  buttonsModal.style.display = "flex";
+});
+document.getElementById("addButtonRow").addEventListener("click", () => renderButtonRow());
+document.getElementById("cancelButtons").addEventListener("click", () => buttonsModal.style.display = "none");
+
+document.getElementById("saveButtons").addEventListener("click", async () => {
+  const rows = [...buttonRowsEl.children];
+  const buttons = rows.map(row => ({
+    label: row.querySelector(".btn-label").value.trim(),
+    url: row.querySelector(".btn-url").value.trim(),
+  })).filter(b => b.label && b.url);
+
+  await supabaseClient.from("qr_groups").update({ buttons }).eq("id", groupId);
+  currentGroup.buttons = buttons;
+  buttonsModal.style.display = "none";
+});
+
+// ---- Add item (upload photo + video, compile AR target) ----
+const addItemModal = document.getElementById("addItemModal");
+document.getElementById("addItemBtn").addEventListener("click", () => addItemModal.style.display = "flex");
+document.getElementById("cancelAddItem").addEventListener("click", () => addItemModal.style.display = "none");
+
+function getSelectedItemType() {
+  return document.querySelector('input[name="itemType"]:checked').value;
+}
+
+// Swap the photo field's hint depending on whether it's an AR trigger image
+// or just a preview thumbnail for a plain-video item.
+function updateItemTypeHint() {
+  const isVideo = getSelectedItemType() === "video";
+  document.getElementById("itemPhotoLabel").textContent = isVideo
+    ? "Photo (preview thumbnail)"
+    : "Photo (what the camera looks for)";
+  document.getElementById("itemTypeHint").textContent = isVideo
+    ? "No AR recognition — the video opens fullscreen right away. The photo is just shown as a thumbnail."
+    : "The photo below is what the camera scans to trigger the video.";
+}
+document.getElementById("itemTypeAr").addEventListener("change", updateItemTypeHint);
+document.getElementById("itemTypeVideo").addEventListener("change", updateItemTypeHint);
+
+// Uploads a file straight from the browser to Cloudflare R2, using a
+// short-lived link issued by our own /api/get-upload-url function. The R2
+// secret keys never touch the browser — only that one-time link does.
+async function uploadFile(file) {
+  const res = await fetch("/api/get-upload-url", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ fileName: file.name, contentType: file.type || "application/octet-stream" }),
+  });
+  const { uploadUrl, publicUrl, error } = await res.json();
+  if (error) throw new Error(error);
+
+  const putRes = await fetch(uploadUrl, { method: "PUT", body: file, headers: { "Content-Type": file.type || "application/octet-stream" } });
+  if (!putRes.ok) throw new Error("Upload to storage failed.");
+
+  return publicUrl;
+}
+
+// ---- Shared AR recompilation ----
+// All active AR items in a group are recognized off ONE combined target
+// file, so a single QR code can tell any of them apart with no picker
+// screen in between. Whenever an AR item is added, deleted, or shown/hidden,
+// that combined file has to be rebuilt from scratch. Video-only items never
+// call this — they keep their separate, untouched per-item QR flow.
+//
+// NOTE: MindAR's compiler API has changed across versions in the past — if this
+// throws, check https://hiukim.github.io/mind-ar-js-doc/core-api/ for the
+// current script tag and class name, and update this function to match.
+const arSyncStatusEl = document.getElementById("arSyncStatus");
+
+function setArSyncStatus(text) {
+  if (!text) {
+    arSyncStatusEl.style.display = "none";
+    arSyncStatusEl.textContent = "";
+  } else {
+    arSyncStatusEl.style.display = "block";
+    arSyncStatusEl.textContent = text;
+  }
+}
+
+async function recompileGroupMind() {
+  setArSyncStatus("Updating AR recognition…");
+  try {
+    const { data: arItems, error } = await supabaseClient
+      .from("items")
+      .select("*")
+      .eq("qr_group_id", groupId)
+      .eq("item_type", "ar")
+      .eq("active", true)
+      .order("sort_order", { ascending: true });
+    if (error) throw error;
+
+    if (!arItems.length) {
+      const { error: clearErr } = await supabaseClient.from("qr_groups").update({ mind_url: null }).eq("id", groupId);
+      if (clearErr) throw clearErr;
+      setArSyncStatus(null);
+      return;
+    }
+
+    // Load every active AR item's photo as an image so the compiler can read
+    // its pixels. crossOrigin is required since these photos are served from
+    // Cloudflare R2, a different origin than this page — if R2's CORS
+    // settings ever block this, these loads will fail here.
+    const images = await Promise.all(arItems.map(it => new Promise((resolve, reject) => {
+      const img = new Image();
+      img.crossOrigin = "anonymous";
+      img.onload = () => resolve(img);
+      img.onerror = () => reject(new Error(`Could not load the photo for "${it.name}".`));
+      img.src = it.photo_url;
+    })));
+
+    const compiler = new window.MINDAR.IMAGE.Compiler();
+    await compiler.compileImageTargets(images, () => {});
+    const buffer = await compiler.exportData();
+    const mindFile = new File([buffer], "group-target.mind", { type: "application/octet-stream" });
+    const mindUrl = await uploadFile(mindFile);
+
+    // Record each item's position within the combined file so scan.html
+    // knows which recognized target maps to which video.
+    await Promise.all(arItems.map((it, i) =>
+      supabaseClient.from("items").update({ target_index: i }).eq("id", it.id)
+    ));
+
+    const { error: saveErr } = await supabaseClient.from("qr_groups").update({ mind_url: mindUrl }).eq("id", groupId);
+    if (saveErr) throw saveErr;
+
+    setArSyncStatus(null);
+  } catch (err) {
+    console.error(err);
+    setArSyncStatus("Couldn't update AR recognition — try again, or check your connection.");
+  }
+}
+
+document.getElementById("rebuildArBtn").addEventListener("click", () => recompileGroupMind());
+
+document.getElementById("confirmAddItem").addEventListener("click", async () => {
+  const name = document.getElementById("itemName").value.trim();
+  const itemType = getSelectedItemType();
+  const photoFile = document.getElementById("itemPhoto").files[0];
+  const videoFile = document.getElementById("itemVideo").files[0];
+  const errorBox = document.getElementById("addItemError");
+  const statusEl = document.getElementById("uploadStatus");
+  errorBox.style.display = "none";
+
+  if (!name || !photoFile || !videoFile) {
+    errorBox.textContent = "Fill in the name and choose both files.";
+    errorBox.style.display = "block";
+    return;
+  }
+
+  const confirmBtn = document.getElementById("confirmAddItem");
+  confirmBtn.disabled = true;
+
+  try {
+    statusEl.textContent = "Uploading photo…";
+    const photoUrl = await uploadFile(photoFile);
+
+    statusEl.textContent = "Uploading video…";
+    const videoUrl = await uploadFile(videoFile);
+
+    statusEl.textContent = "Saving…";
+    const { error } = await supabaseClient.from("items").insert({
+      qr_group_id: groupId, name, item_type: itemType, slug: slugify(name),
+      photo_url: photoUrl, video_url: videoUrl,
+    });
+    if (error) throw error;
+
+    addItemModal.style.display = "none";
+    statusEl.textContent = "";
+    document.getElementById("itemName").value = "";
+    document.getElementById("itemPhoto").value = "";
+    document.getElementById("itemVideo").value = "";
+    document.getElementById("itemTypeAr").checked = true;
+    updateItemTypeHint();
+    loadItems();
+
+    // AR recognition is rebuilt from ALL active AR items in the group (not
+    // just this one), so a single QR code can tell any of them apart. This
+    // runs in the background — the modal has already closed — and its own
+    // status line above the item list shows progress. Video-only items skip
+    // this entirely.
+    if (itemType === "ar") recompileGroupMind();
+  } catch (err) {
+    errorBox.textContent = err.message || "Something went wrong.";
+    errorBox.style.display = "block";
+    statusEl.textContent = "";
+  } finally {
+    confirmBtn.disabled = false;
+  }
+});
+</script>
+
+<!-- Needed only for the client-side AR target compiler used above.
+     type="module" is required: this build of mind-ar is published as an ES module
+     (it uses `import` internally), so loading it as a classic script silently
+     fails and leaves window.MINDAR undefined. -->
+<script type="module" src="https://cdn.jsdelivr.net/npm/mind-ar@1.2.5/dist/mindar-image.prod.js"></script>
+</body>
+</html>
