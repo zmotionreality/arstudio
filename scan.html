@@ -33,6 +33,18 @@
     font-size:14px; color:#fff; text-shadow:0 1px 4px rgba(0,0,0,0.6);
   }
 
+  /* Simple static corner-bracket frame shown over the camera while scanning
+     — purely visual, no library behavior behind it. */
+  #scanFrame {
+    display:none; position:fixed; top:50%; left:50%; transform:translate(-50%,-50%);
+    width:240px; height:240px; pointer-events:none;
+  }
+  #scanFrame i { position:absolute; width:28px; height:28px; border:3px solid #fff; opacity:0.85; }
+  #scanFrame i:nth-child(1) { top:0; left:0; border-right:none; border-bottom:none; }
+  #scanFrame i:nth-child(2) { top:0; right:0; border-left:none; border-bottom:none; }
+  #scanFrame i:nth-child(3) { bottom:0; left:0; border-right:none; border-top:none; }
+  #scanFrame i:nth-child(4) { bottom:0; right:0; border-left:none; border-top:none; }
+
   /* Fullscreen playback after "continue without aiming" */
   #playerScreen { display:none; background:#000; }
   #playerVideo { width:100%; height:100%; object-fit:contain; }
@@ -96,6 +108,7 @@
 
 <div id="arContainer" style="display:none;"></div>
 <p id="hintOverlay" style="display:none;">Point your camera at the photo</p>
+<div id="scanFrame"><i></i><i></i><i></i><i></i></div>
 
 <button id="closeArBtn" aria-label="Close">✕</button>
 <div id="rotateHint">
@@ -141,6 +154,7 @@ const errorScreen = document.getElementById("errorScreen");
 const pickerScreen = document.getElementById("pickerScreen");
 const arContainer = document.getElementById("arContainer");
 const hintOverlay = document.getElementById("hintOverlay");
+const scanFrame = document.getElementById("scanFrame");
 const playerScreen = document.getElementById("playerScreen");
 const playerVideo = document.getElementById("playerVideo");
 const linkRow = document.getElementById("linkRow");
@@ -156,6 +170,7 @@ function showOnly(el) {
   // back out of.
   const showClose = el === arContainer || el === playerScreen;
   closeArBtn.style.display = showClose ? "flex" : "none";
+  scanFrame.style.display = el === arContainer ? "block" : "none";
 
   if (el !== playerScreen) {
     clearTimeout(rotateHintTimeout);
