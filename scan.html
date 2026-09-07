@@ -25,8 +25,11 @@
   #arContainer { position:fixed; inset:0; }
   #arContainer video { object-fit:cover; }
 
+  /* Sits near the top, not the bottom — the bottom is where the optional
+     Instagram/WhatsApp/etc. link buttons live, and with both anchored to the
+     bottom edge the buttons were overlapping and covering this text. */
   #hintOverlay {
-    position:fixed; left:0; right:0; bottom:32px; text-align:center; pointer-events:none;
+    position:fixed; left:0; right:0; top:70px; text-align:center; pointer-events:none;
     font-size:14px; color:#fff; text-shadow:0 1px 4px rgba(0,0,0,0.6);
   }
 
@@ -190,9 +193,9 @@ window.addEventListener("orientationchange", updateRotateHint);
 // picker (if this code has more than one item and isn't in combined-AR
 // mode), restarts the combined AR session (if it is), or restarts the
 // camera for the single item.
-closeArBtn.addEventListener("click", () => {
+closeArBtn.addEventListener("click", async () => {
   try { playerVideo.pause(); } catch (e) {}
-  try { if (mindarThree) mindarThree.stop(); } catch (e) {}
+  await stopMindAR();
   linkRow.style.display = "none";
   hintOverlay.style.display = "none";
 
@@ -325,6 +328,23 @@ function mindArReady() {
   return !!(window.MINDAR && window.MINDAR.IMAGE && window.MINDAR.IMAGE.MindARThree);
 }
 
+// Fully stops the current camera session before anything starts a new one.
+// iOS Safari can get confused — sometimes even bouncing out to its own
+// native camera screen instead of showing the page — if a new camera
+// session starts before the previous one has actually finished releasing
+// the camera. Stopping the render loop first, awaiting stop(), and adding a
+// short pause afterwards is the same sequence already validated in testing.
+async function stopMindAR() {
+  if (!mindarThree) return;
+  const mt = mindarThree;
+  mindarThree = null;
+  try {
+    mt.renderer.setAnimationLoop(null);
+    await mt.stop();
+  } catch (e) { console.error(e); }
+  await new Promise(r => setTimeout(r, 300));
+}
+
 // Runs ONE camera session recognizing every item in arItemsList against the
 // group's single shared AR file (qr_groups.mind_url) — this is what lets a
 // photo-menu's QR code tell several dishes apart with no picker screen.
@@ -333,6 +353,7 @@ function mindArReady() {
 // that item's own target_index.
 async function startAR(arItemsList) {
   currentArItems = arItemsList;
+  await stopMindAR(); // make sure any previous camera session is fully gone first
 
   if (!group.mind_url) {
     showError("AR recognition isn't set up for this yet. Ask the business to rebuild it in the admin panel.");
@@ -370,11 +391,11 @@ async function startAR(arItemsList) {
     const { renderer, scene, camera } = mindarThree;
 
     let switched = false;
-    function switchToFullscreenPlayer(camVideo) {
+    async function switchToFullscreenPlayer(camVideo) {
       switched = true;
       playerVideo.src = camVideo.src;
       playerVideo.currentTime = camVideo.currentTime;
-      mindarThree.stop();
+      await stopMindAR();
       showOnly(playerScreen);
       linkRow.style.display = "flex";
       playerVideo.play().catch(() => {});
@@ -425,7 +446,7 @@ async function startAR(arItemsList) {
     renderer.setAnimationLoop(() => renderer.render(scene, camera));
   } catch (err) {
     console.error(err);
-    try { if (mindarThree) mindarThree.stop(); } catch (e2) {}
+    await stopMindAR();
     showError("Couldn't start the camera. Make sure camera access is allowed, then reload and try again.");
   }
 }
