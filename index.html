@@ -172,10 +172,8 @@
   .benefit-card p { color: var(--text-dim); margin: 0; font-size: 15px; }
   .how-note { margin-top: 16px; color: var(--text-dim); max-width: 56ch; font-size: 15px; }
 
-  /* ---------- where this fits (interactive use-case grid) ---------- */
-  .usecase-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-top: 30px; align-items: start; }
-  @media (max-width: 860px) { .usecase-grid { grid-template-columns: repeat(2, 1fr); } }
-  @media (max-width: 540px) { .usecase-grid { grid-template-columns: 1fr; } }
+  /* ---------- where this fits (interactive use-case list) ---------- */
+  .usecase-grid { display: flex; flex-direction: column; gap: 10px; margin-top: 30px; max-width: 640px; }
   .usecase-item { display: flex; flex-direction: column; width: 100%; }
   .usecase-card {
     display: flex; align-items: center; gap: 14px; padding: 14px 16px; border-radius: 10px; width: 100%;
@@ -301,7 +299,7 @@
     <h2 style="font-size: clamp(30px, 4vw, 42px);">Wherever you already print a photo.</h2>
     <div class="usecase-grid" role="tablist" id="useTabs">
       <div class="usecase-item">
-        <button class="usecase-card is-active" data-use="restaurants" aria-expanded="true">
+        <button class="usecase-card" data-use="restaurants" aria-expanded="false">
           <span class="usecase-icon"><svg viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 8v14M13 8v8a3 3 0 0 0 3 3M19 8v8a3 3 0 0 1-3 3v13"/><path d="M32 8c-3 2-4 6-4 10 0 3 1 5 4 6v14"/></svg></span>
           <span class="label">Restaurants &amp; Menus</span>
           <span class="usecase-chevron" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg></span>
@@ -535,10 +533,12 @@
 
   tabs.forEach(function (tab) {
     tab.addEventListener("click", function () {
+      var wasActive = tab.classList.contains("is-active");
       tabs.forEach(function (t) {
         t.classList.remove("is-active");
         t.setAttribute("aria-expanded", "false");
       });
+      if (wasActive) return;
       tab.classList.add("is-active");
       tab.setAttribute("aria-expanded", "true");
       var caption = captions[tab.dataset.use];
