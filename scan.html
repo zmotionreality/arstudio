@@ -148,6 +148,7 @@ import * as THREE from "three";
 const params = new URLSearchParams(window.location.search);
 const groupSlug = params.get("g");
 const itemSlug = params.get("i");
+const demoId = params.get("demo");
 
 const loadingScreen = document.getElementById("loadingScreen");
 const errorScreen = document.getElementById("errorScreen");
@@ -254,8 +255,10 @@ async function logScan(groupId, itemId) {
 
 let group = null;
 let items = [];
+let isDemo = false;
 
 async function init() {
+  if (demoId) return initByDemo(demoId);
   if (itemSlug) return initByItem();
   if (!groupSlug) return showError("Missing code.");
 
@@ -304,6 +307,23 @@ async function initByItem() {
   openItem(it);
 }
 
+// "Try It Yourself" demo: a photo+video pair a visitor uploaded themselves
+// on the landing page, stored in its own demo_items table (not qr_groups /
+// items — never mixed with real client data), and only playable for about
+// an hour after it was created.
+async function initByDemo(id) {
+  const { data: d, error } = await supabaseClient.from("demo_items").select("*").eq("id", id).single();
+  if (error || !d) return showError("This demo wasn't found - it may have already expired.");
+  if (new Date(d.expires_at) < new Date()) return showError("This demo has expired. Make a new one from the site.");
+
+  isDemo = true;
+  group = { mind_url: d.mind_url, buttons: [] };
+  const item = { id: d.id, photo_url: d.photo_url, video_url: d.video_url, item_type: "ar", target_index: 0 };
+  items = [item];
+  renderButtons([]);
+  openItem(item);
+}
+
 function showPicker() {
   document.getElementById("pickerGrid").innerHTML = items.map(it => `
     <div class="picker-item" data-id="${it.id}">
@@ -332,7 +352,7 @@ function openItem(item) {
 
 // Plain video item: no camera, no AR — just play the video fullscreen right away.
 function playDirect(item) {
-  logScan(group.id, item.id);
+  if (!isDemo) logScan(group.id, item.id);
   playerVideo.src = item.video_url;
   playerVideo.currentTime = 0;
   showOnly(playerScreen);
@@ -452,7 +472,7 @@ async function startAR(arItemsList) {
       let logged = false;
       anchor.onTargetFound = () => {
         hintOverlay.style.display = "none";
-        if (!logged) { logged = true; logScan(group.id, item.id); }
+        if (!logged) { logged = true; if (!isDemo) logScan(group.id, item.id); }
         video.play().catch(() => {});
         // After a couple of seconds of confirmed playback, drop out of the
         // camera view into a normal fullscreen video — "continue without aiming".

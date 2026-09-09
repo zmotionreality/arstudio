@@ -240,6 +240,28 @@
   }
   .ticket .cta-row { justify-content: center; }
 
+  /* ---------- try it yourself / we'll do it for you ---------- */
+  .try-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 28px; margin-top: 40px; align-items: stretch; }
+  @media (max-width: 780px) { .try-grid { grid-template-columns: 1fr; } }
+  .try-card {
+    background: var(--surface-2); border-radius: 4px; padding: 40px 32px;
+    text-align: center; box-shadow: 0 24px 48px -28px var(--shadow);
+    display: flex; flex-direction: column; align-items: center;
+  }
+  .try-card h3 { font-family: var(--font-display); font-weight: 400; font-size: clamp(24px, 3vw, 30px); margin: 6px 0 14px; }
+  .try-card p.lede { color: var(--text-dim); max-width: 42ch; margin: 0 auto 26px; font-size: 15px; }
+  .try-form { display: flex; flex-direction: column; gap: 14px; width: 100%; max-width: 320px; margin: 0 auto; }
+  .try-field { display: flex; flex-direction: column; gap: 6px; text-align: left; font-size: 13px; color: var(--text-dim); }
+  .try-field input[type="file"] {
+    font-family: var(--font-body); font-size: 13px; color: var(--text-dim); width: 100%;
+    background: var(--surface); border: 1px solid var(--line); border-radius: 6px; padding: 10px;
+  }
+  .try-status { margin-top: 16px; font-size: 13px; color: var(--muted); min-height: 18px; }
+  .try-result { margin-top: 22px; display: none; flex-direction: column; align-items: center; gap: 8px; }
+  .try-result canvas { background: #fff; padding: 10px; border-radius: 8px; display: block; }
+  .try-hint { font-size: 14px; color: var(--text); margin: 4px 0 0; }
+  .try-expiry { font-size: 12px; color: var(--muted); margin: 0; }
+
   /* ---------- footer ---------- */
   footer { padding: 40px 0 56px; }
   footer .wrap { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; }
@@ -476,14 +498,40 @@
 
 <section class="ticket-section">
   <div class="wrap">
-    <div class="ticket">
-      <p class="eyebrow">Free Demo</p>
-      <h2>See it work on your own photo - free.</h2>
-      <p class="lede">Text a photo of anything you want to bring to life - a menu item, a card, a flyer, a label. I'll turn that exact photo into a working demo and send it back so you can scan it yourself, before you decide anything.</p>
-      <div class="phone-display">(213) 419-0520</div>
-      <div class="cta-row">
-        <a class="btn btn-primary" href="sms:+12134190520">Text a photo</a>
-        <a class="btn btn-ghost" href="tel:+12134190520">Call instead</a>
+    <p class="eyebrow" style="text-align: center;">Free Demo</p>
+    <h2 style="font-size: clamp(30px, 4.5vw, 42px); text-align: center; margin: 0 auto 8px; max-width: 40ch;">See it work before you decide anything.</h2>
+    <div class="try-grid">
+      <div class="try-card">
+        <p class="eyebrow">Try It Yourself</p>
+        <h3>Upload your own photo &amp; video</h3>
+        <p class="lede">We'll turn it into a working demo right in your browser. Scan it with your phone and watch it play - no signup, and it disappears automatically in about an hour.</p>
+        <form class="try-form" id="tryForm">
+          <label class="try-field">
+            <span>Your photo</span>
+            <input type="file" id="tryPhoto" accept="image/*" required>
+          </label>
+          <label class="try-field">
+            <span>Your video</span>
+            <input type="file" id="tryVideo" accept="video/*" required>
+          </label>
+          <button type="submit" class="btn btn-primary" id="tryBtn">Create My Demo</button>
+        </form>
+        <p class="try-status" id="tryStatus"></p>
+        <div class="try-result" id="tryResult">
+          <canvas id="tryQr"></canvas>
+          <p class="try-hint">Scan this with your phone's camera</p>
+          <p class="try-expiry">This demo expires in about an hour.</p>
+        </div>
+      </div>
+      <div class="try-card">
+        <p class="eyebrow">We'll Do It For You</p>
+        <h3>Text us a photo - free</h3>
+        <p class="lede">Text a photo of anything you want to bring to life - a menu item, a card, a flyer, a label. I'll turn that exact photo into a working demo and send it back so you can scan it yourself, before you decide anything.</p>
+        <div class="phone-display">(213) 419-0520</div>
+        <div class="cta-row">
+          <a class="btn btn-primary" href="sms:+12134190520">Text a photo</a>
+          <a class="btn btn-ghost" href="tel:+12134190520">Call instead</a>
+        </div>
       </div>
     </div>
   </div>
@@ -495,6 +543,150 @@
     <div class="foot-tag">Photos that play video.</div>
   </div>
 </footer>
+
+<!-- Needed only for the "Try It Yourself" demo below: Supabase stores the
+     demo record, mind-ar's compiler builds the AR target from the visitor's
+     own photo (right in their browser - the photo never leaves except to
+     upload to storage), and qrcode renders the QR they scan with their phone. -->
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script>
+  var supabaseClient = window.supabase.createClient(
+    "https://ucpnbsftxocrwksfvtvc.supabase.co",
+    "sb_publishable_q2XnhHq_3gFJs0f3K8nVGA_noxKD7R7"
+  );
+</script>
+<script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.3/build/qrcode.min.js"></script>
+<script type="module" src="https://cdn.jsdelivr.net/npm/mind-ar@1.2.5/dist/mindar-image.prod.js"></script>
+
+<script>
+(function () {
+  var tryForm = document.getElementById("tryForm");
+  var tryPhoto = document.getElementById("tryPhoto");
+  var tryVideo = document.getElementById("tryVideo");
+  var tryBtn = document.getElementById("tryBtn");
+  var tryStatus = document.getElementById("tryStatus");
+  var tryResult = document.getElementById("tryResult");
+  var tryQr = document.getElementById("tryQr");
+
+  if (tryForm) {
+    function mindArCompilerReady() {
+      return !!(window.MINDAR && window.MINDAR.IMAGE && window.MINDAR.IMAGE.Compiler);
+    }
+
+    function waitForMindAr() {
+      return new Promise(function (resolve, reject) {
+        if (mindArCompilerReady()) return resolve();
+        var start = Date.now();
+        var iv = setInterval(function () {
+          if (mindArCompilerReady()) {
+            clearInterval(iv);
+            resolve();
+          } else if (Date.now() - start > 10000) {
+            clearInterval(iv);
+            reject(new Error("Couldn't load AR recognition. Check your connection and reload."));
+          }
+        }, 200);
+      });
+    }
+
+    function uploadFile(file) {
+      return fetch("/api/get-upload-url", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ fileName: file.name, contentType: file.type || "application/octet-stream" }),
+      })
+        .then(function (res) { return res.json(); })
+        .then(function (data) {
+          if (data.error) throw new Error(data.error);
+          return fetch(data.uploadUrl, {
+            method: "PUT",
+            body: file,
+            headers: { "Content-Type": file.type || "application/octet-stream" },
+          }).then(function (putRes) {
+            if (!putRes.ok) throw new Error("Upload failed - try again.");
+            return data.publicUrl;
+          });
+        });
+    }
+
+    function loadImage(file) {
+      return new Promise(function (resolve, reject) {
+        var img = new Image();
+        img.onload = function () { resolve(img); };
+        img.onerror = function () { reject(new Error("Could not read that photo.")); };
+        img.src = URL.createObjectURL(file);
+      });
+    }
+
+    tryForm.addEventListener("submit", function (e) {
+      e.preventDefault();
+      var photoFile = tryPhoto.files[0];
+      var videoFile = tryVideo.files[0];
+      if (!photoFile || !videoFile) return;
+
+      tryBtn.disabled = true;
+      tryResult.style.display = "none";
+      tryStatus.style.color = "";
+
+      // Best-effort: clear out anyone's already-expired demos before making
+      // a new one. Never blocks this visitor's own flow if it fails.
+      fetch("/api/cleanup-demo", { method: "POST" }).catch(function () {});
+
+      var photoUrl, videoUrl;
+
+      waitForMindAr()
+        .then(function () {
+          tryStatus.textContent = "Uploading your photo…";
+          return uploadFile(photoFile);
+        })
+        .then(function (url) {
+          photoUrl = url;
+          tryStatus.textContent = "Uploading your video…";
+          return uploadFile(videoFile);
+        })
+        .then(function (url) {
+          videoUrl = url;
+          tryStatus.textContent = "Preparing AR recognition…";
+          return loadImage(photoFile);
+        })
+        .then(function (img) {
+          var compiler = new window.MINDAR.IMAGE.Compiler();
+          return compiler.compileImageTargets([img], function () {}).then(function () {
+            return compiler.exportData();
+          });
+        })
+        .then(function (buffer) {
+          var mindFile = new File([buffer], "demo-target.mind", { type: "application/octet-stream" });
+          return uploadFile(mindFile);
+        })
+        .then(function (mindUrl) {
+          tryStatus.textContent = "Almost done…";
+          return supabaseClient.from("demo_items")
+            .insert({ photo_url: photoUrl, video_url: videoUrl, mind_url: mindUrl })
+            .select()
+            .single();
+        })
+        .then(function (result) {
+          if (result.error) throw result.error;
+          var demoUrl = window.location.origin + "/scan.html?demo=" + result.data.id;
+          return window.QRCode.toCanvas(tryQr, demoUrl, { width: 200, margin: 1 });
+        })
+        .then(function () {
+          tryStatus.textContent = "";
+          tryResult.style.display = "flex";
+        })
+        .catch(function (err) {
+          console.error(err);
+          tryStatus.style.color = "#ff8a80";
+          tryStatus.textContent = (err && err.message) || "Something went wrong - try again.";
+        })
+        .finally(function () {
+          tryBtn.disabled = false;
+        });
+    });
+  }
+})();
+</script>
 
 <script>
 (function () {
