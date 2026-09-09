@@ -555,7 +555,7 @@
     "sb_publishable_q2XnhHq_3gFJs0f3K8nVGA_noxKD7R7"
   );
 </script>
-<script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.3/build/qrcode.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/qrious@4.0.2/dist/qrious.min.js"></script>
 <script type="module" src="https://cdn.jsdelivr.net/npm/mind-ar@1.2.5/dist/mindar-image.prod.js"></script>
 
 <script>
@@ -669,7 +669,7 @@
         .then(function (result) {
           if (result.error) throw result.error;
           var demoUrl = window.location.origin + "/scan.html?demo=" + result.data.id;
-          return window.QRCode.toCanvas(tryQr, demoUrl, { width: 200, margin: 1 });
+          new window.QRious({ element: tryQr, value: demoUrl, size: 200, background: "white", foreground: "black" });
         })
         .then(function () {
           tryStatus.textContent = "";
