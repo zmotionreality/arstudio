@@ -1,7 +1,7 @@
 <!doctype html>
 <html lang="en">
 <head>
-<meta charset="utf-8" />
+<meta charset="utf-8">
 <title>ZMotion Reality</title>
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -173,7 +173,9 @@
   .how-note { margin-top: 16px; color: var(--text-dim); max-width: 56ch; font-size: 15px; }
 
   /* ---------- where this fits (interactive use-case list) ---------- */
-  .usecase-grid { display: flex; flex-direction: column; gap: 10px; margin-top: 30px; max-width: 640px; }
+  .usecase-grid { display: flex; gap: 16px; margin-top: 30px; max-width: 920px; align-items: flex-start; }
+  .usecase-col { display: flex; flex-direction: column; gap: 10px; flex: 1 1 0; min-width: 0; }
+  @media (max-width: 700px) { .usecase-grid { flex-direction: column; } }
   .usecase-item { display: flex; flex-direction: column; width: 100%; }
   .usecase-card {
     display: flex; align-items: center; gap: 14px; padding: 14px 16px; border-radius: 10px; width: 100%;
@@ -298,6 +300,7 @@
     <p class="eyebrow">Where This Fits</p>
     <h2 style="font-size: clamp(30px, 4vw, 42px);">Wherever you already print a photo.</h2>
     <div class="usecase-grid" role="tablist" id="useTabs">
+      <div class="usecase-col">
       <div class="usecase-item">
         <button class="usecase-card" data-use="restaurants" aria-expanded="false">
           <span class="usecase-icon"><svg viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 8v14M13 8v8a3 3 0 0 0 3 3M19 8v8a3 3 0 0 1-3 3v13"/><path d="M32 8c-3 2-4 6-4 10 0 3 1 5 4 6v14"/></svg></span>
@@ -305,14 +308,6 @@
           <span class="usecase-chevron" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg></span>
         </button>
         <p class="usecase-drop">A photo of the dish on your menu plays a video the moment someone points their camera at it.</p>
-      </div>
-      <div class="usecase-item">
-        <button class="usecase-card" data-use="weddings" aria-expanded="false">
-          <span class="usecase-icon"><svg viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="2"><circle cx="19" cy="27" r="9"/><circle cx="29" cy="27" r="9"/></svg></span>
-          <span class="label">Weddings &amp; Invitations</span>
-          <span class="usecase-chevron" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg></span>
-        </button>
-        <p class="usecase-drop">The invitation's photo plays a video message from the couple the second a guest scans it.</p>
       </div>
       <div class="usecase-item">
         <button class="usecase-card" data-use="cards" aria-expanded="false">
@@ -323,28 +318,12 @@
         <p class="usecase-drop">Your card's photo turns into a short intro video - a face, a voice, a portfolio - right when someone points their camera at it.</p>
       </div>
       <div class="usecase-item">
-        <button class="usecase-card" data-use="realestate" aria-expanded="false">
-          <span class="usecase-icon"><svg viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 22 24 9l16 13"/><path d="M12 20v17h24V20"/><path d="M20 37v-9h8v9"/></svg></span>
-          <span class="label">Real Estate</span>
-          <span class="usecase-chevron" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg></span>
-        </button>
-        <p class="usecase-drop">A flyer photo of the listing plays a walkthrough video the moment a buyer points their camera at it.</p>
-      </div>
-      <div class="usecase-item">
         <button class="usecase-card" data-use="gifts" aria-expanded="false">
           <span class="usecase-icon"><svg viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="8" y="20" width="32" height="20" rx="2"/><path d="M8 28h32"/><path d="M24 20v20"/><path d="M24 20c-2-6-9-9-11-5-1.5 3 2 5 11 5zM24 20c2-6 9-9 11-5 1.5 3-2 5-11 5z"/></svg></span>
           <span class="label">Gifts &amp; Keepsakes</span>
           <span class="usecase-chevron" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg></span>
         </button>
         <p class="usecase-drop">A photo on the gift or its tag plays a personal video message the moment it's unwrapped and scanned.</p>
-      </div>
-      <div class="usecase-item">
-        <button class="usecase-card" data-use="packaging" aria-expanded="false">
-          <span class="usecase-icon"><svg viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 16 24 8l16 8-16 8-16-8z"/><path d="M8 16v16l16 8 16-8V16"/><path d="M24 24v16"/></svg></span>
-          <span class="label">Product Packaging</span>
-          <span class="usecase-chevron" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg></span>
-        </button>
-        <p class="usecase-drop">The label's photo plays a how-to-use or origin-story video right on the shelf, in someone's hand.</p>
       </div>
       <div class="usecase-item">
         <button class="usecase-card" data-use="retail" aria-expanded="false">
@@ -355,28 +334,12 @@
         <p class="usecase-drop">A tag or label on the shirt plays a lookbook video or the story behind it, right in the fitting room.</p>
       </div>
       <div class="usecase-item">
-        <button class="usecase-card" data-use="greetingcards" aria-expanded="false">
-          <span class="usecase-icon"><svg viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="10" width="30" height="28" rx="2"/><path d="M24 10v28"/><path d="M30 20l1.6 3.3 3.6.5-2.6 2.6.6 3.6-3.2-1.7-3.2 1.7.6-3.6-2.6-2.6 3.6-.5z" fill="currentColor" stroke="none"/></svg></span>
-          <span class="label">Greeting Cards</span>
-          <span class="usecase-chevron" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg></span>
-        </button>
-        <p class="usecase-drop">The card's photo plays a personal video message the second it's opened and scanned.</p>
-      </div>
-      <div class="usecase-item">
         <button class="usecase-card" data-use="albums" aria-expanded="false">
           <span class="usecase-icon"><svg viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M24 14c-4-3-10-3-15-1v21c5-2 11-2 15 1"/><path d="M24 14c4-3 10-3 15-1v21c-5-2-11-2-15 1"/><path d="M24 14v22"/></svg></span>
           <span class="label">Photo Albums</span>
           <span class="usecase-chevron" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg></span>
         </button>
         <p class="usecase-drop">A photo in the album plays the video from that exact moment - a wedding toast, a first step, a graduation walk.</p>
-      </div>
-      <div class="usecase-item">
-        <button class="usecase-card" data-use="print" aria-expanded="false">
-          <span class="usecase-icon"><svg viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="10" y="15" width="24" height="29" rx="1"/><rect x="14" y="9" width="24" height="29" rx="1"/><path d="M18 17h16M18 23h16M18 29h9"/></svg></span>
-          <span class="label">Print Media</span>
-          <span class="usecase-chevron" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg></span>
-        </button>
-        <p class="usecase-drop">A poster, flyer, or printed page plays the trailer, story, or full piece behind it, right where it's hanging or being read.</p>
       </div>
       <div class="usecase-item">
         <button class="usecase-card" data-use="kidsstickers" aria-expanded="false">
@@ -386,6 +349,48 @@
         </button>
         <p class="usecase-drop">A sticker or party favor plays a short animated clip the moment a kid points a phone at it.</p>
       </div>
+      </div>
+      <div class="usecase-col">
+      <div class="usecase-item">
+        <button class="usecase-card" data-use="weddings" aria-expanded="false">
+          <span class="usecase-icon"><svg viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="2"><circle cx="19" cy="27" r="9"/><circle cx="29" cy="27" r="9"/></svg></span>
+          <span class="label">Weddings &amp; Invitations</span>
+          <span class="usecase-chevron" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg></span>
+        </button>
+        <p class="usecase-drop">The invitation's photo plays a video message from the couple the second a guest scans it.</p>
+      </div>
+      <div class="usecase-item">
+        <button class="usecase-card" data-use="realestate" aria-expanded="false">
+          <span class="usecase-icon"><svg viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 22 24 9l16 13"/><path d="M12 20v17h24V20"/><path d="M20 37v-9h8v9"/></svg></span>
+          <span class="label">Real Estate</span>
+          <span class="usecase-chevron" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg></span>
+        </button>
+        <p class="usecase-drop">A flyer photo of the listing plays a walkthrough video the moment a buyer points their camera at it.</p>
+      </div>
+      <div class="usecase-item">
+        <button class="usecase-card" data-use="packaging" aria-expanded="false">
+          <span class="usecase-icon"><svg viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 16 24 8l16 8-16 8-16-8z"/><path d="M8 16v16l16 8 16-8V16"/><path d="M24 24v16"/></svg></span>
+          <span class="label">Product Packaging</span>
+          <span class="usecase-chevron" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg></span>
+        </button>
+        <p class="usecase-drop">The label's photo plays a how-to-use or origin-story video right on the shelf, in someone's hand.</p>
+      </div>
+      <div class="usecase-item">
+        <button class="usecase-card" data-use="greetingcards" aria-expanded="false">
+          <span class="usecase-icon"><svg viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="10" width="30" height="28" rx="2"/><path d="M24 10v28"/><path d="M30 20l1.6 3.3 3.6.5-2.6 2.6.6 3.6-3.2-1.7-3.2 1.7.6-3.6-2.6-2.6 3.6-.5z" fill="currentColor" stroke="none"/></svg></span>
+          <span class="label">Greeting Cards</span>
+          <span class="usecase-chevron" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg></span>
+        </button>
+        <p class="usecase-drop">The card's photo plays a personal video message the second it's opened and scanned.</p>
+      </div>
+      <div class="usecase-item">
+        <button class="usecase-card" data-use="print" aria-expanded="false">
+          <span class="usecase-icon"><svg viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="10" y="15" width="24" height="29" rx="1"/><rect x="14" y="9" width="24" height="29" rx="1"/><path d="M18 17h16M18 23h16M18 29h9"/></svg></span>
+          <span class="label">Printed Materials</span>
+          <span class="usecase-chevron" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg></span>
+        </button>
+        <p class="usecase-drop">A poster, flyer, or printed page plays the trailer, story, or full piece behind it, right where it's hanging or being read.</p>
+      </div>
       <div class="usecase-item">
         <button class="usecase-card" data-use="museums" aria-expanded="false">
           <span class="usecase-icon"><svg viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="30" height="30" rx="2"/><rect x="15" y="15" width="18" height="18" rx="1"/><circle cx="20" cy="21" r="2" fill="currentColor" stroke="none"/><path d="M15 27l5-5 4 4 4-6 5 7"/></svg></span>
@@ -393,6 +398,7 @@
           <span class="usecase-chevron" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg></span>
         </button>
         <p class="usecase-drop">A photo next to an exhibit plays background history or commentary the moment a visitor points their camera at it.</p>
+      </div>
       </div>
     </div>
   </div>
@@ -550,4 +556,5 @@
   }
 })();
 </script>
-</body></html>
+</body>
+</html>
