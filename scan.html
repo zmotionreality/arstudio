@@ -75,7 +75,7 @@
 </div>
 <div class="screen center" id="introScreen" style="display:none;">
   <p style="font-size:20px;margin:0 0 24px;">Point your camera at the photo</p>
-  <button id="startBtn" class="big-btn">Tap to start</button>
+  <button id="startBtn" class="big-btn">Start</button>
 </div>
 <div class="screen center" id="endScreen" style="display:none;">
   <p style="font-size:20px;margin:0 0 24px;">Closed</p>
@@ -216,6 +216,9 @@ closeArBtn.addEventListener("click", async () => {
   showOnly(endScreen);
   await stopMindAR();
   try { window.close(); } catch (e) {}
+  setTimeout(() => {
+    if (history.length > 1) { history.back(); } else { location.href = "/"; }
+  }, 250);
 });
 function showError(msg) {
   document.getElementById("errorText").textContent = msg;
