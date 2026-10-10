@@ -32,4 +32,451 @@
 
   /* Fullscreen playback after "continue without aiming" */
   #playerScreen { display:none; background:#000; }
-  #playerVideo { width:100%;
+  #playerVideo { width:100%; height:100%; object-fit:contain; }
+
+  .link-row {
+    position:fixed; left:0; right:0; bottom:0; padding:16px; display:flex; gap:8px;
+    flex-wrap:wrap; justify-content:center; z-index:5;
+  }
+  .link-pill {
+    background:rgba(255,255,255,0.12); backdrop-filter:blur(6px); color:#fff; padding:8px 14px;
+    border-radius:999px; font-size:13px; text-decoration:none; border:1px solid rgba(255,255,255,0.2);
+  }
+
+  .status-text { font-size:15px; opacity:0.8; }
+  .error-text { font-size:14px; color:#ff8a80; }
+  .spinner {
+    width:28px; height:28px; border:2px solid rgba(255,255,255,0.25); border-top-color:#fff;
+    border-radius:50%; animation:spin 0.8s linear infinite; margin:0 auto 14px;
+  }
+  @keyframes spin { to { transform:rotate(360deg); } }
+
+  #closeArBtn {
+    display:none; position:fixed; top:16px; left:16px; z-index:20;
+    width:38px; height:38px; border-radius:50%; border:none; cursor:pointer;
+    background:rgba(0,0,0,0.5); color:#fff; font-size:18px; line-height:1;
+    align-items:center; justify-content:center;
+  }
+
+  #soundBtn {
+    display:none; position:fixed; top:16px; right:16px; z-index:20;
+    background:rgba(0,0,0,0.65); color:#fff; border:1px solid rgba(255,255,255,0.35);
+    padding:10px 16px; border-radius:999px; font-size:14px; cursor:pointer;
+  }
+  #playerScreen video.moved { width:100%; height:100%; object-fit:contain; }
+
+  #rotateHint {
+    display:none; position:fixed; top:16px; left:50%; transform:translateX(-50%);
+    z-index:20; background:rgba(0,0,0,0.65); color:#fff; padding:8px 14px;
+    border-radius:999px; font-size:13px; align-items:center; gap:8px;
+    pointer-events:none; white-space:nowrap;
+  }
+  #rotateHint svg { animation: rotateWiggle 1.4s ease-in-out infinite; }
+  @keyframes rotateWiggle {
+    0%, 100% { transform:rotate(0deg); }
+    50% { transform:rotate(90deg); }
+  }
+</style>
+</head>
+<body>
+
+<div class="screen center" id="loadingScreen">
+  <div class="spinner"></div>
+  <p class="status-text">Loading…</p>
+</div>
+
+<div class="screen center" id="errorScreen" style="display:none;">
+  <p class="error-text" id="errorText">This code isn't set up yet.</p>
+</div>
+
+<div class="screen" id="pickerScreen">
+  <h1>Point your camera at…</h1>
+  <div class="picker-grid" id="pickerGrid"></div>
+</div>
+
+<div id="arContainer" style="display:none;"></div>
+<p id="hintOverlay" style="display:none;">Point your camera at the photo</p>
+
+<button id="closeArBtn" aria-label="Close">✕</button>
+<button id="soundBtn">🔊 Tap for sound</button>
+<div id="rotateHint">
+  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+    <rect x="6" y="2" width="12" height="20" rx="2" />
+  </svg>
+  Rotate your phone for fullscreen
+</div>
+
+<div class="screen" id="playerScreen">
+  <video id="playerVideo" playsinline autoplay></video>
+</div>
+
+<div class="link-row" id="linkRow"></div>
+
+<script src="js/supabase-client.js"></script>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+  }
+}
+</script>
+<script type="module" src="https://cdn.jsdelivr.net/npm/mind-ar@1.2.5/dist/mindar-image-three.prod.js"></script>
+
+<script type="module">
+import * as THREE from "three";
+
+const params = new URLSearchParams(window.location.search);
+const groupSlug = params.get("g");
+const itemSlug = params.get("i");
+const demoId = params.get("demo");
+
+const loadingScreen = document.getElementById("loadingScreen");
+const errorScreen = document.getElementById("errorScreen");
+const pickerScreen = document.getElementById("pickerScreen");
+const arContainer = document.getElementById("arContainer");
+const hintOverlay = document.getElementById("hintOverlay");
+const playerScreen = document.getElementById("playerScreen");
+const playerVideo = document.getElementById("playerVideo");
+const linkRow = document.getElementById("linkRow");
+const closeArBtn = document.getElementById("closeArBtn");
+const rotateHint = document.getElementById("rotateHint");
+const soundBtn = document.getElementById("soundBtn");
+let activeVideo = null; // the AR video currently playing (muted until the viewer taps)
+let movedVideo = null;  // same element once moved into the fullscreen player
+
+function hideSound() { soundBtn.style.display = "none"; }
+soundBtn.addEventListener("click", () => {
+  const v = activeVideo; if (!v) return;
+  v.muted = false; v.volume = 1;
+  v.play().catch(() => { v.muted = true; v.play().catch(() => {}); });
+  hideSound();
+});
+// any tap while a muted AR video plays also turns the sound on
+arContainer.addEventListener("click", () => { if (activeVideo && activeVideo.muted) soundBtn.click(); });
+
+function showOnly(el) {
+  [loadingScreen, errorScreen, pickerScreen, arContainer, playerScreen].forEach(s => s.style.display = "none");
+  el.style.display = el === arContainer ? "block" : "flex";
+
+  const showClose = el === arContainer || el === playerScreen;
+  closeArBtn.style.display = showClose ? "flex" : "none";
+
+  if (el !== arContainer && el !== playerScreen) hideSound();
+  if (el !== playerScreen) {
+    clearTimeout(rotateHintTimeout);
+    rotateHint.style.display = "none";
+  }
+}
+
+let rotateHintTimeout = null;
+function updateRotateHint() {
+  if (playerScreen.style.display === "none") return;
+  const pv = movedVideo || playerVideo;
+  const vw = pv.videoWidth, vh = pv.videoHeight;
+  if (!vw || !vh) { rotateHint.style.display = "none"; return; }
+
+  const videoIsLandscape = vw > vh;
+  const phoneIsPortrait = window.matchMedia("(orientation: portrait)").matches;
+  const mismatch = videoIsLandscape === phoneIsPortrait;
+
+  clearTimeout(rotateHintTimeout);
+  if (mismatch) {
+    rotateHint.style.display = "flex";
+    rotateHintTimeout = setTimeout(() => { rotateHint.style.display = "none"; }, 4000);
+  } else {
+    rotateHint.style.display = "none";
+  }
+}
+playerVideo.addEventListener("loadedmetadata", updateRotateHint);
+window.addEventListener("resize", updateRotateHint);
+window.addEventListener("orientationchange", updateRotateHint);
+
+closeArBtn.addEventListener("click", async () => {
+  try { playerVideo.pause(); } catch (e) {}
+  try { if (activeVideo) activeVideo.pause(); } catch (e) {}
+  if (movedVideo) { movedVideo.remove(); movedVideo = null; }
+  activeVideo = null; hideSound();
+  playerVideo.style.display = "";
+  linkRow.style.display = "none";
+  hintOverlay.style.display = "none";
+  showOnly(loadingScreen);
+  document.querySelector("#loadingScreen .status-text").textContent = "Restarting camera…";
+  await stopMindAR();
+
+  if (combinedMode) {
+    startAR(currentArItems);
+  } else if (items.length > 1) {
+    showPicker();
+  } else if (items.length === 1) {
+    openItem(items[0]);
+  }
+});
+
+function showError(msg) {
+  document.getElementById("errorText").textContent = msg;
+  showOnly(errorScreen);
+}
+
+function renderButtons(buttons) {
+  linkRow.innerHTML = (buttons || []).map(b =>
+    `<a class="link-pill" href="${b.url}" target="_blank" rel="noopener">${b.label}</a>`
+  ).join("");
+}
+
+async function logScan(groupId, itemId) {
+  let city = null, country = null;
+  try {
+    const res = await fetch("https://ipapi.co/json/");
+    const geo = await res.json();
+    city = geo.city || null;
+    country = geo.country_name || null;
+  } catch (e) { /* analytics only */ }
+  supabaseClient.from("scans").insert({ qr_group_id: groupId, item_id: itemId, city, country }).then(() => {});
+}
+
+let group = null;
+let items = [];
+let isDemo = false;
+
+async function init() {
+  if (demoId) return initByDemo(demoId);
+  if (itemSlug) return initByItem();
+  if (!groupSlug) return showError("Missing code.");
+
+  const { data: g, error: gErr } = await supabaseClient.from("qr_groups").select("*").eq("slug", groupSlug).single();
+  if (gErr || !g) return showError("This code isn't set up yet.");
+  group = g;
+
+  const { data: its, error: iErr } = await supabaseClient
+    .from("items").select("*").eq("qr_group_id", g.id).eq("active", true).order("sort_order");
+  if (iErr || !its || !its.length) return showError("Nothing is live on this code yet.");
+  items = its;
+
+  renderButtons(group.buttons);
+
+  const arItems = items.filter(it => it.item_type === "ar");
+
+  if (items.length === 1) {
+    openItem(items[0]);
+  } else if (arItems.length === items.length && arItems.length > 1) {
+    combinedMode = true;
+    startAR(arItems);
+  } else {
+    showPicker();
+  }
+}
+
+async function initByItem() {
+  const { data: it, error: iErr } = await supabaseClient
+    .from("items").select("*").eq("slug", itemSlug).eq("active", true).single();
+  if (iErr || !it) return showError("This code isn't set up yet.");
+
+  const { data: g, error: gErr } = await supabaseClient
+    .from("qr_groups").select("*").eq("id", it.qr_group_id).single();
+  if (gErr || !g) return showError("This code isn't set up yet.");
+
+  group = g;
+  items = [it];
+  renderButtons(group.buttons);
+  openItem(it);
+}
+
+async function initByDemo(id) {
+  const { data: d, error } = await supabaseClient.from("demo_items").select("*").eq("id", id).single();
+  if (error || !d) return showError("This demo wasn't found - it may have already expired.");
+  if (new Date(d.expires_at) < new Date()) return showError("This demo has expired. Make a new one from the site.");
+
+  isDemo = true;
+  group = { mind_url: d.mind_url, buttons: [] };
+  const item = { id: d.id, photo_url: d.photo_url, video_url: d.video_url, item_type: "ar", target_index: 0 };
+  items = [item];
+  renderButtons([]);
+  openItem(item);
+}
+
+function showPicker() {
+  document.getElementById("pickerGrid").innerHTML = items.map(it => `
+    <div class="picker-item" data-id="${it.id}">
+      <img src="${it.photo_url}" alt="${it.name}" />
+      <p>${it.name}</p>
+    </div>`).join("");
+  document.querySelectorAll(".picker-item").forEach(el => {
+    el.addEventListener("click", () => {
+      const item = items.find(i => i.id === el.dataset.id);
+      openItem(item);
+    });
+  });
+  showOnly(pickerScreen);
+}
+
+function openItem(item) {
+  if (item.item_type === "video") {
+    playDirect(item);
+  } else {
+    startAR([item]);
+  }
+}
+
+function playDirect(item) {
+  if (!isDemo) logScan(group.id, item.id);
+  playerVideo.src = item.video_url;
+  playerVideo.currentTime = 0;
+  showOnly(playerScreen);
+  linkRow.style.display = "flex";
+  playerVideo.play().catch(() => {});
+}
+
+let mindarThree = null;
+let combinedMode = false;
+let currentArItems = [];
+
+function mindArReady() {
+  return !!(window.MINDAR && window.MINDAR.IMAGE && window.MINDAR.IMAGE.MindARThree);
+}
+
+async function stopMindAR() {
+  if (!mindarThree) return;
+  const mt = mindarThree;
+  mindarThree = null;
+  try {
+    mt.renderer.setAnimationLoop(null);
+    await mt.stop();
+  } catch (e) { console.error(e); }
+  await new Promise(r => setTimeout(r, 700));
+}
+
+async function startAR(arItemsList) {
+  currentArItems = arItemsList;
+  await stopMindAR();
+
+  if (!group.mind_url) {
+    showError("AR recognition isn't set up for this yet. Ask the business to rebuild it in the admin panel.");
+    return;
+  }
+  const validItems = arItemsList.filter(it => typeof it.target_index === "number");
+  if (!validItems.length) {
+    showError("AR recognition isn't set up for this yet. Ask the business to rebuild it in the admin panel.");
+    return;
+  }
+
+  showOnly(loadingScreen);
+  document.querySelector("#loadingScreen .status-text").textContent = "Starting camera…";
+
+  if (!mindArReady()) {
+    const start = Date.now();
+    while (!mindArReady() && Date.now() - start < 8000) {
+      await new Promise(r => setTimeout(r, 200));
+    }
+  }
+  if (!mindArReady()) {
+    showError("Couldn't load the camera. Check your connection and reload.");
+    return;
+  }
+
+  arContainer.innerHTML = "";
+  try {
+    mindarThree = new window.MINDAR.IMAGE.MindARThree({
+      container: arContainer,
+      imageTargetSrc: group.mind_url,
+      maxTrack: validItems.length,
+      uiLoading: "no",
+      uiScanning: "no",
+      uiError: "no",
+    });
+    const { renderer, scene, camera } = mindarThree;
+
+    // Photo dimensions, so each video plane has the photo's own shape
+    // (a wide $100 bill -> wide plane) instead of a square.
+    const sizes = new Map();
+    await Promise.all(validItems.map(it => new Promise(res => {
+      const im = new Image(); im.crossOrigin = "anonymous";
+      im.onload = () => { sizes.set(it.id, { w: im.naturalWidth, h: im.naturalHeight }); res(); };
+      im.onerror = () => res();
+      im.src = it.photo_url;
+    })));
+
+    let switched = false;
+    async function switchToFullscreenPlayer(camVideo) {
+      switched = true;
+      await stopMindAR();
+      showOnly(playerScreen);
+      linkRow.style.display = "flex";
+      // Reuse the SAME element that is already playing (muted autoplay is
+      // allowed on iOS; a brand-new unmuted one is not).
+      playerVideo.style.display = "none";
+      camVideo.classList.add("moved");
+      playerScreen.appendChild(camVideo);
+      movedVideo = camVideo;
+      camVideo.play().catch(() => {});
+      if (camVideo.muted) soundBtn.style.display = "block";
+      updateRotateHint();
+    }
+
+    validItems.forEach(item => {
+      const anchor = mindarThree.addAnchor(item.target_index);
+
+      const video = document.createElement("video");
+      video.setAttribute("playsinline", "");
+      video.setAttribute("webkit-playsinline", "");
+      video.playsInline = true;
+      video.muted = true;          // muted autoplay is the only kind iOS allows without a tap
+      video.loop = true;
+      video.preload = "auto";
+      video.crossOrigin = "anonymous";
+      video.src = item.video_url;
+      video.load();
+
+      const texture = new THREE.VideoTexture(video);
+      texture.colorSpace = THREE.SRGBColorSpace;
+      const planeAspect = (sizes.get(item.id) || {w:1,h:1});
+      const pa = planeAspect.w / planeAspect.h;
+      const geometry = new THREE.PlaneGeometry(1, 1 / pa);
+      const material = new THREE.MeshBasicMaterial({ map: texture, toneMapped: false });
+      const plane = new THREE.Mesh(geometry, material);
+      anchor.group.add(plane);
+
+      // Fill the plane (the photo's shape) with the video, cropping the overflow.
+      video.addEventListener("loadedmetadata", () => {
+        const va = video.videoWidth / video.videoHeight;
+        if (va < pa) { texture.repeat.set(1, va / pa); texture.offset.set(0, (1 - va / pa) / 2); }
+        else { texture.repeat.set(pa / va, 1); texture.offset.set((1 - pa / va) / 2, 0); }
+      });
+      video.addEventListener("error", () => { console.error("video error", video.error); });
+
+      let logged = false;
+      anchor.onTargetFound = () => {
+        hintOverlay.style.display = "none";
+        if (!logged) { logged = true; if (!isDemo) logScan(group.id, item.id); }
+        activeVideo = video;
+        video.play().then(() => { if (video.muted && !switched) soundBtn.style.display = "block"; }).catch((e) => { console.error(e); });
+        setTimeout(() => {
+          if (!switched && !video.paused) switchToFullscreenPlayer(video);
+        }, 2500);
+      };
+      anchor.onTargetLost = () => {
+        if (!switched) { hintOverlay.style.display = "block"; hideSound(); }
+      };
+    });
+
+    showOnly(arContainer);
+    hintOverlay.style.display = "block";
+    linkRow.style.display = "flex";
+
+    const timeout = new Promise((_, reject) =>
+      setTimeout(() => reject(new Error("timeout")), 12000)
+    );
+    await Promise.race([mindarThree.start(), timeout]);
+    renderer.setAnimationLoop(() => renderer.render(scene, camera));
+  } catch (err) {
+    console.error(err);
+    await stopMindAR();
+    showError("Couldn't start the camera. Make sure camera access is allowed, then reload and try again.");
+  }
+}
+
+init();
+</script>
+</body>
+</html>
