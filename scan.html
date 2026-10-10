@@ -77,6 +77,11 @@
   <p style="font-size:20px;margin:0 0 24px;">Point your camera at the photo</p>
   <button id="startBtn" class="big-btn">Tap to start</button>
 </div>
+<div class="screen center" id="endScreen" style="display:none;">
+  <p style="font-size:20px;margin:0 0 24px;">Closed</p>
+  <button id="againBtn" class="big-btn">Scan again</button>
+  <p style="opacity:.6;font-size:13px;margin-top:24px;">You can now close this tab.</p>
+</div>
 <div class="screen" id="pickerScreen">
   <h1>Point your camera at…</h1>
   <div class="picker-grid" id="pickerGrid"></div>
@@ -121,13 +126,25 @@ const linkRow = document.getElementById("linkRow");
 const closeArBtn = document.getElementById("closeArBtn");
 const rotateHint = document.getElementById("rotateHint");
 const introScreen = document.getElementById("introScreen");
+const endScreen = document.getElementById("endScreen");
+document.getElementById("againBtn").addEventListener("click", () => location.reload());
 const startBtn = document.getElementById("startBtn");
 let activeVideo = null;
 let movedVideo = null;
 let unlocked = false;
 let pendingList = [];
 const videoPool = new Map();
+let audioCtx = null;
+const gainPool = new Map();
+function setSound(id, on) {
+  const g = gainPool.get(id);
+  if (g) g.gain.value = on ? 1 : 0;
+}
 function prepareVideos(list) {
+  if (!audioCtx) {
+    try { audioCtx = new (window.AudioContext || window.webkitAudioContext)(); } catch (e) { audioCtx = null; }
+  }
+  if (audioCtx && audioCtx.state !== "running") { try { audioCtx.resume(); } catch (e) {} }
   list.forEach(item => {
     if (videoPool.has(item.id)) return;
     const v = document.createElement("video");
@@ -139,11 +156,17 @@ function prepareVideos(list) {
     v.crossOrigin = "anonymous";
     v.src = item.video_url;
     v.muted = false;
-    const p = v.play();
-    if (p && p.then) {
-      p.then(() => { v.pause(); v.currentTime = 0; })
-       .catch(() => { v.muted = true; v.play().then(() => { v.pause(); v.currentTime = 0; }).catch(() => {}); });
+    if (audioCtx) {
+      try {
+        const node = audioCtx.createMediaElementSource(v);
+        const g = audioCtx.createGain();
+        g.gain.value = 0;
+        node.connect(g); g.connect(audioCtx.destination);
+        gainPool.set(item.id, g);
+      } catch (e) { console.error(e); }
     }
+    const p = v.play();
+    if (p && p.catch) p.catch(() => {});
     videoPool.set(item.id, v);
   });
 }
@@ -153,7 +176,7 @@ startBtn.addEventListener("click", () => {
   startAR(pendingList);
 });
 function showOnly(el) {
-  [loadingScreen, errorScreen, introScreen, pickerScreen, arContainer, playerScreen].forEach(s => s.style.display = "none");
+  [loadingScreen, errorScreen, endScreen, introScreen, pickerScreen, arContainer, playerScreen].forEach(s => s.style.display = "none");
   el.style.display = el === arContainer ? "block" : "flex";
   const showClose = el === arContainer || el === playerScreen;
   closeArBtn.style.display = showClose ? "flex" : "none";
@@ -184,22 +207,15 @@ window.addEventListener("resize", updateRotateHint);
 window.addEventListener("orientationchange", updateRotateHint);
 closeArBtn.addEventListener("click", async () => {
   try { playerVideo.pause(); } catch (e) {}
-  try { if (activeVideo) activeVideo.pause(); } catch (e) {}
+  videoPool.forEach((v, id) => { setSound(id, false); try { v.pause(); } catch (e) {} });
   if (movedVideo) { movedVideo.remove(); movedVideo = null; }
   activeVideo = null;
   playerVideo.style.display = "";
   linkRow.style.display = "none";
   hintOverlay.style.display = "none";
-  showOnly(loadingScreen);
-  document.querySelector("#loadingScreen .status-text").textContent = "Restarting camera…";
+  showOnly(endScreen);
   await stopMindAR();
-  if (combinedMode) {
-    startAR(currentArItems);
-  } else if (items.length > 1) {
-    showPicker();
-  } else if (items.length === 1) {
-    openItem(items[0]);
-  }
+  try { window.close(); } catch (e) {}
 });
 function showError(msg) {
   document.getElementById("errorText").textContent = msg;
@@ -363,7 +379,6 @@ async function startAR(arItemsList) {
     validItems.forEach(item => {
       const anchor = mindarThree.addAnchor(item.target_index);
       const video = videoPool.get(item.id) || (prepareVideos([item]), videoPool.get(item.id));
-      try { video.pause(); video.currentTime = 0; } catch (e) {}
       const texture = new THREE.VideoTexture(video);
       texture.colorSpace = THREE.SRGBColorSpace;
       const planeAspect = (sizes.get(item.id) || {w:1,h:1});
@@ -386,11 +401,14 @@ async function startAR(arItemsList) {
         hintOverlay.style.display = "none";
         if (!logged) { logged = true; if (!isDemo) logScan(group.id, item.id); }
         activeVideo = video;
-        video.play().catch(() => { video.muted = true; video.play().catch(() => {}); });
+        try { video.currentTime = 0; } catch (e) {}
+        if (audioCtx && audioCtx.state !== "running") { try { audioCtx.resume(); } catch (e) {} }
+        setSound(item.id, true);
+        video.play().catch(() => {});
       };
       anchor.onTargetLost = () => {
         hintOverlay.style.display = "block";
-        try { video.pause(); } catch (e) {}
+        setSound(item.id, false);
       };
     });
     showOnly(arContainer);
