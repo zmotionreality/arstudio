@@ -242,6 +242,22 @@ async function logScan(groupId, itemId) {
 let group = null;
 let items = [];
 let isDemo = false;
+function limitMessage(g) {
+  if (!g) return null;
+  if (g.expires_at && new Date(g.expires_at) < new Date()) return "This code has expired.";
+  if (typeof g.scan_limit === "number" && (g.scans_used || 0) >= g.scan_limit) return "This code has reached its scan limit.";
+  return null;
+}
+function consumeScan() {
+  if (!group || !group.id) return;
+  supabaseClient.rpc("use_scan", { p_group: String(group.id) }).then(async (res) => {
+    const d = res && res.data;
+    if (d && d.ok === false) {
+      await stopMindAR();
+      showError(d.reason === "expired" ? "This code has expired." : "This code has reached its scan limit.");
+    }
+  }).catch(() => {});
+}
 async function init() {
   if (demoId) return initByDemo(demoId);
   if (itemSlug) return initByItem();
@@ -249,6 +265,8 @@ async function init() {
   const { data: g, error: gErr } = await supabaseClient.from("qr_groups").select("*").eq("slug", groupSlug).single();
   if (gErr || !g) return showError("This code isn't set up yet.");
   group = g;
+  const limited = limitMessage(group);
+  if (limited) return showError(limited);
   const { data: its, error: iErr } = await supabaseClient
     .from("items").select("*").eq("qr_group_id", g.id).eq("active", true).order("sort_order");
   if (iErr || !its || !its.length) return showError("Nothing is live on this code yet.");
@@ -272,6 +290,8 @@ async function initByItem() {
     .from("qr_groups").select("*").eq("id", it.qr_group_id).single();
   if (gErr || !g) return showError("This code isn't set up yet.");
   group = g;
+  const limited = limitMessage(group);
+  if (limited) return showError(limited);
   items = [it];
   renderButtons(group.buttons);
   openItem(it);
@@ -402,7 +422,7 @@ async function startAR(arItemsList) {
       let logged = false;
       anchor.onTargetFound = () => {
         hintOverlay.style.display = "none";
-        if (!logged) { logged = true; if (!isDemo) logScan(group.id, item.id); }
+        if (!logged) { logged = true; if (!isDemo) { logScan(group.id, item.id); consumeScan(); } }
         activeVideo = video;
         try { video.currentTime = 0; } catch (e) {}
         if (audioCtx && audioCtx.state !== "running") { try { audioCtx.resume(); } catch (e) {} }
