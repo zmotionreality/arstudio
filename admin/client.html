@@ -105,6 +105,31 @@
   </div>
 </div>
 
+<!-- Duplicate group modal -->
+<div class="modal-overlay" id="dupGroupModal" style="display:none;">
+  <div class="modal">
+    <h2>Duplicate group</h2>
+    <p class="field-hint" style="margin-bottom:14px;">Makes a new QR code with the same photo and video. Scans are counted separately for the new code.</p>
+    <div class="field">
+      <label>Buyer name / order number</label>
+      <input type="text" id="dupName" placeholder="Frank - #4226252033" />
+    </div>
+    <div class="field">
+      <label>Scan limit</label>
+      <input type="number" id="dupLimit" min="1" step="1" value="50" />
+    </div>
+    <div class="field">
+      <label>Valid for (months)</label>
+      <input type="number" id="dupMonths" min="1" step="1" value="12" />
+    </div>
+    <div class="field-error" id="dupError" style="display:none;"></div>
+    <div class="modal-actions">
+      <button class="btn" id="cancelDup">Cancel</button>
+      <button class="btn btn-primary" id="confirmDup">Create</button>
+    </div>
+  </div>
+</div>
+
 <script src="../js/supabase-client.js"></script>
 <script>
 const params = new URLSearchParams(window.location.search);
@@ -193,11 +218,79 @@ async function loadGroups() {
         <p class="row-title">${g.name}</p>
         <p class="row-sub">${g.items.length} item${g.items.length === 1 ? "" : "s"}</p>
       </div>
+      <button class="btn btn-sm dup-group" type="button" data-id="${g.id}" data-name="${g.name.replace(/"/g, "&quot;")}"><i class="ti ti-copy"></i> Duplicate</button>
       <i class="ti ti-chevron-right" style="color:var(--text-muted);"></i>
     </a>`).join("");
+  document.querySelectorAll(".dup-group").forEach(btn => {
+    btn.addEventListener("click", (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      openDup(btn.dataset.id, btn.dataset.name);
+    });
+  });
 }
 
 loadClient().then(loadGroups);
+
+// ---- Duplicate group ----
+const dupModal = document.getElementById("dupGroupModal");
+let dupSourceId = null;
+function openDup(id, name) {
+  dupSourceId = id;
+  document.getElementById("dupName").value = "";
+  document.getElementById("dupName").placeholder = name + " - buyer";
+  document.getElementById("dupLimit").value = 50;
+  document.getElementById("dupMonths").value = 12;
+  document.getElementById("dupError").style.display = "none";
+  dupModal.style.display = "flex";
+}
+document.getElementById("cancelDup").addEventListener("click", () => dupModal.style.display = "none");
+document.getElementById("confirmDup").addEventListener("click", async () => {
+  const name = document.getElementById("dupName").value.trim();
+  const limit = parseInt(document.getElementById("dupLimit").value, 10);
+  const months = parseInt(document.getElementById("dupMonths").value, 10);
+  const errorBox = document.getElementById("dupError");
+  const btn = document.getElementById("confirmDup");
+  errorBox.style.display = "none";
+  if (!name || !(limit > 0) || !(months > 0)) {
+    errorBox.textContent = "Fill in the name, the scan limit and the number of months.";
+    errorBox.style.display = "block";
+    return;
+  }
+  btn.disabled = true;
+  try {
+    const { data: src, error: e1 } = await supabaseClient.from("qr_groups").select("*").eq("id", dupSourceId).single();
+    if (e1 || !src) throw new Error(e1 ? e1.message : "Source group not found.");
+    const expires = new Date();
+    expires.setMonth(expires.getMonth() + months);
+    const groupRow = { ...src };
+    ["id", "created_at", "updated_at"].forEach(k => delete groupRow[k]);
+    Object.assign(groupRow, {
+      name, slug: slugify(name), scan_limit: limit, scans_used: 0, expires_at: expires.toISOString(),
+    });
+    const { data: created, error: e2 } = await supabaseClient.from("qr_groups").insert(groupRow).select().single();
+    if (e2 || !created) throw new Error(e2 ? e2.message : "Could not create the group.");
+    const { data: srcItems, error: e3 } = await supabaseClient.from("items").select("*").eq("qr_group_id", dupSourceId);
+    if (e3) throw new Error(e3.message);
+    if (srcItems.length) {
+      const rows = srcItems.map(it => {
+        const r = { ...it };
+        ["id", "created_at", "updated_at"].forEach(k => delete r[k]);
+        r.qr_group_id = created.id;
+        r.slug = slugify(it.name || "item");
+        return r;
+      });
+      const { error: e4 } = await supabaseClient.from("items").insert(rows);
+      if (e4) throw new Error(e4.message);
+    }
+    window.location.href = "group.html?id=" + created.id;
+  } catch (err) {
+    errorBox.textContent = err.message || "Something went wrong.";
+    errorBox.style.display = "block";
+  } finally {
+    btn.disabled = false;
+  }
+});
 
 // ---- Edit client ----
 const editClientModal = document.getElementById("editClientModal");
