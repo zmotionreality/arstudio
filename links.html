@@ -1,0 +1,153 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>ZMotion Reality</title>
+<meta name="description" content="Singing birthday bill gifts. Scan the QR code, point your phone at a bill, and watch it sing. Instant digital download." />
+<meta name="theme-color" content="#0f0f10" />
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 800 800'%3E%3Crect width='800' height='800' fill='%23fff'/%3E%3Crect x='137' y='169' width='397' height='332' rx='85' fill='none' stroke='%23808080' stroke-width='38'/%3E%3Crect x='246' y='285' width='410' height='345' rx='80' fill='%23141414'/%3E%3Cpath d='M401 376 540 456 401 538Z' fill='%23c9a227' stroke='%23c9a227' stroke-width='22' stroke-linejoin='round'/%3E%3C/svg%3E" />
+<style>
+:root{
+  --bg:#0f0f10;--card:#18181a;--card-hover:#202023;--line:rgba(244,239,228,.12);
+  --gold:#c9a227;--cream:#f4efe4;--mute:#a8a396;--ink:#151515;
+  --ease:cubic-bezier(.23,1,.32,1);
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html{-webkit-text-size-adjust:100%}
+body{
+  min-height:100vh;min-height:100dvh;background:var(--bg);color:var(--cream);
+  font-family:Inter,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  font-size:16px;line-height:1.5;-webkit-font-smoothing:antialiased;
+  background-image:radial-gradient(700px 420px at 50% -80px,rgba(201,162,39,.16),transparent 70%);
+  background-repeat:no-repeat;
+}
+main{max-width:480px;margin:0 auto;padding:48px 16px 40px}
+header{text-align:center}
+.logo{width:88px;height:88px;border-radius:22px;display:block;margin:0 auto 20px;box-shadow:0 12px 40px rgba(0,0,0,.5)}
+h1{font-size:28px;line-height:34px;font-weight:800;letter-spacing:-.8px}
+.tag{margin-top:8px;font-size:16px;color:var(--mute);text-wrap:balance}
+.pitch{margin:28px 0 16px;text-align:center;font-size:18px;line-height:26px;font-weight:600;letter-spacing:-.3px;text-wrap:balance}
+.pitch span{color:var(--gold)}
+
+ul.links{list-style:none;display:grid;gap:12px}
+.link{
+  display:flex;align-items:center;gap:16px;min-height:76px;padding:14px 16px;
+  border-radius:20px;background:var(--card);border:1px solid var(--line);
+  color:var(--cream);text-decoration:none;
+  transition:transform 160ms var(--ease),background-color 160ms var(--ease),border-color 160ms var(--ease);
+}
+.link:active{transform:scale(.97)}
+.link:focus-visible{outline:3px solid var(--gold);outline-offset:3px}
+.link .ic{flex:none;width:48px;height:48px;border-radius:14px;display:grid;place-items:center;background:rgba(201,162,39,.14);color:var(--gold)}
+.link .tx{flex:1;min-width:0}
+.link b{display:block;font-size:17px;line-height:22px;font-weight:700;letter-spacing:-.3px}
+.link small{display:block;margin-top:2px;font-size:14px;line-height:20px;color:var(--mute)}
+.link .go{flex:none;color:var(--mute);transition:transform 160ms var(--ease),color 160ms var(--ease)}
+.link.primary{background:var(--gold);border-color:var(--gold);color:var(--ink)}
+.link.primary .ic{background:rgba(21,21,21,.12);color:var(--ink)}
+.link.primary small{color:rgba(21,21,21,.78)}
+.link.primary .go{color:var(--ink)}
+@media (hover:hover){
+  .link:hover{background:var(--card-hover);border-color:rgba(201,162,39,.5)}
+  .link.primary:hover{background:#d6ae2d}
+  .link:hover .go{transform:translateX(3px);color:var(--cream)}
+  .link.primary:hover .go{color:var(--ink)}
+}
+
+h2{margin:40px 0 16px;font-size:20px;line-height:26px;font-weight:800;letter-spacing:-.5px;text-align:center}
+ol.steps{list-style:none;display:grid;gap:12px;counter-reset:s}
+ol.steps li{display:flex;gap:16px;align-items:flex-start;counter-increment:s}
+ol.steps li::before{
+  content:counter(s);flex:none;width:32px;height:32px;border-radius:50%;
+  display:grid;place-items:center;background:rgba(201,162,39,.16);color:var(--gold);
+  font-weight:800;font-size:15px;margin-top:1px;
+}
+ol.steps b{display:block;font-size:16px;line-height:24px;font-weight:700}
+ol.steps span{display:block;font-size:15px;line-height:22px;color:var(--mute)}
+.note{margin-top:28px;padding:16px;border-radius:16px;border:1px solid var(--line);text-align:center;font-size:15px;line-height:22px;color:var(--mute)}
+.note b{color:var(--cream)}
+footer{margin-top:32px;text-align:center;font-size:14px;line-height:20px;color:var(--mute)}
+
+@keyframes rise{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:none}}
+header,.pitch,ul.links li,.how{animation:rise 420ms var(--ease) both}
+.pitch{animation-delay:60ms}
+ul.links li:nth-child(1){animation-delay:100ms}
+ul.links li:nth-child(2){animation-delay:140ms}
+ul.links li:nth-child(3){animation-delay:180ms}
+ul.links li:nth-child(4){animation-delay:220ms}
+.how{animation-delay:280ms}
+@media (prefers-reduced-motion:reduce){
+  *,*::before,*::after{animation:none!important;transition:none!important}
+}
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <svg class="logo" viewBox="0 0 800 800" role="img" aria-label="ZMotion Reality logo">
+      <rect width="800" height="800" fill="#fff"/>
+      <rect x="137" y="169" width="397" height="332" rx="85" fill="none" stroke="#808080" stroke-width="38"/>
+      <rect x="246" y="285" width="410" height="345" rx="80" fill="#141414"/>
+      <path d="M401 376 540 456 401 538Z" fill="#c9a227" stroke="#c9a227" stroke-width="22" stroke-linejoin="round"/>
+    </svg>
+    <h1>ZMotion Reality</h1>
+    <p class="tag">Digital products that make ordinary moments unforgettable</p>
+  </header>
+
+  <p class="pitch">A birthday gift that <span>sings</span>. Scan the QR code, point your phone at a bill, and watch it come alive.</p>
+
+  <ul class="links">
+    <li>
+      <a class="link primary" href="https://zmotionreality.gumroad.com/l/20" rel="noopener">
+        <span class="ic" aria-hidden="true">
+          <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="6" width="20" height="12" rx="2"/><circle cx="12" cy="12" r="2.5"/><path d="M6 12h.01M18 12h.01"/></svg>
+        </span>
+        <span class="tx"><b>$20 Singing Birthday Bill</b><small>Andrew Jackson sings. From $3</small></span>
+        <svg class="go" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
+      </a>
+    </li>
+    <li>
+      <a class="link" href="https://zmotionreality.gumroad.com/l/singing-100-bill" rel="noopener">
+        <span class="ic" aria-hidden="true">
+          <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="6" width="20" height="12" rx="2"/><circle cx="12" cy="12" r="2.5"/><path d="M6 12h.01M18 12h.01"/></svg>
+        </span>
+        <span class="tx"><b>$100 Singing Birthday Bill</b><small>Benjamin Franklin sings. $5.99</small></span>
+        <svg class="go" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
+      </a>
+    </li>
+    <li>
+      <a class="link" href="https://www.etsy.com/listing/4605809433" rel="noopener">
+        <span class="ic" aria-hidden="true">
+          <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9l1.5-5h15L21 9"/><path d="M3 9a3 3 0 0 0 6 0 3 3 0 0 0 6 0 3 3 0 0 0 6 0"/><path d="M5 12v8h14v-8"/></svg>
+        </span>
+        <span class="tx"><b>$20 Singing Bill on Etsy</b><small>Instant digital download</small></span>
+        <svg class="go" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
+      </a>
+    </li>
+    <li>
+      <a class="link" href="https://www.etsy.com/listing/4592928518" rel="noopener">
+        <span class="ic" aria-hidden="true">
+          <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9l1.5-5h15L21 9"/><path d="M3 9a3 3 0 0 0 6 0 3 3 0 0 0 6 0 3 3 0 0 0 6 0"/><path d="M5 12v8h14v-8"/></svg>
+        </span>
+        <span class="tx"><b>$100 Singing Bill on Etsy</b><small>Instant digital download</small></span>
+        <svg class="go" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
+      </a>
+    </li>
+  </ul>
+
+  <section class="how" aria-labelledby="how-h">
+    <h2 id="how-h">How it works</h2>
+    <ol class="steps">
+      <li><div><b>Scan the QR code</b><span>Open your phone camera and tap the link that pops up.</span></div></li>
+      <li><div><b>Tap Start, then Allow</b><span>This lets the camera open.</span></div></li>
+      <li><div><b>Point it at your bill</b><span>Hold steady for a second.</span></div></li>
+      <li><div><b>Watch the surprise</b><span>Turn the sound on.</span></div></li>
+    </ol>
+    <p class="note"><b>No app to install.</b> You get your personal QR code right after you order.</p>
+  </section>
+
+  <footer>&copy; ZMotion Reality</footer>
+</main>
+</body>
+</html>
